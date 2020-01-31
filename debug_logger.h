@@ -10,7 +10,7 @@
 
 
 template <typename T>
-struct LoggerIndent {
+struct logger_indent_t {
   static inline int indent = 0;
 };
 

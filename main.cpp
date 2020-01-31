@@ -15,10 +15,10 @@
 
 
 
-#define TRACE_TEST                 DEBUG_LOGGER("test ", LoggerIndentTest::indent)
-#define LOG_TEST(...)              DEBUG_LOG("test ", LoggerIndentTest::indent, __VA_ARGS__)
+#define TRACE_TEST                 DEBUG_LOGGER("test ", logger_indent_test_t::indent)
+#define LOG_TEST(...)              DEBUG_LOG("test ", logger_indent_test_t::indent, __VA_ARGS__)
 
-struct LoggerIndentTest    : LoggerIndent<LoggerIndentTest> { };
+struct logger_indent_test_t   : logger_indent_t<logger_indent_test_t> { };
 
 
 
@@ -27,19 +27,21 @@ using namespace std::chrono_literals;
 
 
 struct env_t {
+  struct tile_t;
   struct bot_t;
   struct system_t;
   struct world_t;
 
+  using system_sptr_t = std::shared_ptr<system_t>;
+  using bot_sptr_t = std::shared_ptr<bot_t>;
+
   struct config_t {
-    size_t seed;
     size_t n;
     size_t m;
 
     config_t() :
       n(10),
-      m(20),
-      seed(0)
+      m(20)
     { }
   };
 
@@ -47,7 +49,7 @@ struct env_t {
     inline static size_t seed;
 
     static void init(const config_t& config) {
-      seed = config.seed;
+      seed = time(0);
     }
 
     static double rand_double() {
@@ -103,23 +105,22 @@ struct env_t {
   };
 
   struct world_t {
-    enum class tile_t : uint8_t {
-      EMPTY,
-      WALL,
-      FOOD,
-      POISON,
-    };
-
     size_t n;
     size_t m;
-    // std::vector<tile_t> tiles;
-    // std::vector<std::shared_ptr<bot_t>> bots;
-    std::vector<std::vector<std::shared_ptr<bot_t>>> bots;
-    std::vector<std::shared_ptr<system_t>> systems;
+    std::vector<bot_sptr_t>      bots;
+    std::vector<tile_t>          tiles;
+    std::vector<system_sptr_t>   systems;
 
     void init(const config_t& config) {
       n = config.n;
       m = config.m;
+      // systems.push_back(nullptr);
+    }
+
+    void update() {
+      for (auto& system : systems) {
+        // system.update(*this, );
+      }
     }
 
     bool load(const nlohmann::json& json) {
@@ -141,24 +142,25 @@ struct env_t {
     }
   };
 
-  struct bot_t {
-    std::array<uint8_t, 64> genes;
-    size_t rip;
-    size_t ind;
-    size_t age;
-    size_t energy;
-    // size_t direction; // TODO
+  struct skill_t {
+    uint16_t   value;
+    uint8_t    volatility;
+  };
 
-    void init(const config_t& config) {
-      TRACE_TEST;
-      for (auto& gene : genes) {
-        gene = utils_t::rand_u64() % 256;
-      }
-      rip = 0;
-      ind = 1;
-      age = 0;
-      energy = 100;
-    }
+  struct tile_t {
+    bool                   is_impassable;
+    uint32_t               age;
+    std::vector<skill_t>   skills;
+  };
+
+  struct bot_t {
+    std::vector<uint8_t>   data;          // 64
+    std::vector<uint8_t>   regs;          // 32
+    std::vector<uint8_t>   interrupts;    // 8
+    std::vector<skill_t>   skills;
+    uint8_t                rip;
+    uint8_t                energy_daily;
+    size_t                 position;
 
     void update(world_t& world) {
       TRACE_TEST;
@@ -166,13 +168,18 @@ struct env_t {
   };
 
   struct system_t {
+    virtual void update(world_t& world, bot_t& bot) = 0;
   };
 
 
 
-  world_t world;
+  world_t                      world;
 
 
+
+  void update() {
+    world.update();
+  }
 
   void init(const config_t& config) {
     utils_t::init(config);
@@ -181,13 +188,9 @@ struct env_t {
 
   bool load(const std::string& name) {
     nlohmann::json json;
-    if (!utils_t::load(json, name))
-      return false;
-    if (!utils_t::load(json))
-      return false;
-    if (!world.load(json))
-      return false;
-    return true;
+    return !utils_t::load(json, name)
+      || !utils_t::load(json)
+      || !world.load(json);
   }
 
   void save(const std::string& name) {
@@ -214,6 +217,8 @@ int main(int argc, char* argv[]) {
     env_t::config_t config;
     env.init(config);
   }
+
+  env.update();
 
   env.save(name);
 
