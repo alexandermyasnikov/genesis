@@ -13,16 +13,16 @@
 #include "json.hpp"
 #include "debug_logger.h"
 
-
+#define JSON_SAVE(json, name) json[#name] = name
+#define JSON_LOAD(json, name) name = json.value(#name, name)
 
 #define TRACE_TEST                 DEBUG_LOGGER("test ", logger_indent_test_t::indent)
 #define LOG_TEST(...)              DEBUG_LOG("test ", logger_indent_test_t::indent, __VA_ARGS__)
 
+using namespace std::chrono_literals;
+
 struct logger_indent_test_t   : logger_indent_t<logger_indent_test_t> { };
 
-
-
-using namespace std::chrono_literals;
 
 
 
@@ -62,13 +62,13 @@ namespace genesis_n {
       if (!json.is_object())
         return;
 
-      position_m             = json.value("position_m",             position_m);
-      position_max           = json.value("position_max",           position_max);
-      bot_code_size          = json.value("bot_code_size",          bot_code_size);
-      bot_regs_size          = json.value("bot_regs_size",          bot_regs_size);
-      bot_interrupts_size    = json.value("bot_interrupts_size",    bot_interrupts_size);
-      bot_energy_daily       = json.value("bot_energy_daily",       bot_energy_daily);
-      system_min_bot_count   = json.value("system_min_bot_count",   system_min_bot_count);
+      JSON_LOAD(json, position_m);
+      JSON_LOAD(json, position_max);
+      JSON_LOAD(json, bot_code_size);
+      JSON_LOAD(json, bot_regs_size);
+      JSON_LOAD(json, bot_interrupts_size);
+      JSON_LOAD(json, bot_energy_daily);
+      JSON_LOAD(json, system_min_bot_count);
 
       position_max = (position_max / position_m) * position_m;   // correct, position_max % position_m == 0
     }
@@ -78,13 +78,13 @@ namespace genesis_n {
       if (!json.is_object())
         json = nlohmann::json::object();
 
-      json["position_m"]             = position_m;
-      json["position_max"]           = position_max;
-      json["bot_code_size"]          = bot_code_size;
-      json["bot_regs_size"]          = bot_regs_size;
-      json["bot_interrupts_size"]    = bot_interrupts_size;
-      json["bot_energy_daily"]       = bot_energy_daily;
-      json["system_min_bot_count"]   = system_min_bot_count;
+      JSON_SAVE(json, position_m);
+      JSON_SAVE(json, position_max);
+      JSON_SAVE(json, bot_code_size);
+      JSON_SAVE(json, bot_regs_size);
+      JSON_SAVE(json, bot_interrupts_size);
+      JSON_SAVE(json, bot_energy_daily);
+      JSON_SAVE(json, system_min_bot_count);
     }
   };
 
@@ -188,12 +188,12 @@ namespace genesis_n {
       if (!json.is_object())
         return false;
 
-      code           = json.value("code", code);
-      regs           = json.value("regs", regs);
-      interrupts     = json.value("interrupts", interrupts);
-      rip            = json.value("rip", rip);
-      energy_daily   = json.value("energy_daily", energy_daily);
-      position       = json.value("position", position);
+      JSON_LOAD(json, code);
+      JSON_LOAD(json, regs);
+      JSON_LOAD(json, interrupts);
+      JSON_LOAD(json, rip);
+      JSON_LOAD(json, energy_daily);
+      JSON_LOAD(json, position);
       // skills      = json.value("skills", skills); // TODO
 
       code.resize(utils_t::parameters.bot_code_size);
@@ -209,12 +209,12 @@ namespace genesis_n {
       if (!json.is_object())
         json = nlohmann::json::object();
 
-      json["code"]           = code;
-      json["regs"]           = regs;
-      json["interrupts"]     = interrupts;
-      json["rip"]            = rip;
-      json["energy_daily"]   = energy_daily;
-      json["position"]       = position;
+      JSON_SAVE(json, code);
+      JSON_SAVE(json, regs);
+      JSON_SAVE(json, interrupts);
+      JSON_SAVE(json, rip);
+      JSON_SAVE(json, energy_daily);
+      JSON_SAVE(json, position);
       // json["skills"]      = skills; // TODO
     }
   };
