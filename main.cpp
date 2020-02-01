@@ -35,7 +35,7 @@ namespace genesis_n {
   using system_sptr_t = std::shared_ptr<system_t>;
 
   struct parameters_t {
-    size_t   position_m;
+    size_t   position_n;
     size_t   position_max;
 
     size_t   bot_code_size;
@@ -47,14 +47,14 @@ namespace genesis_n {
     size_t   system_min_bot_count;
 
     parameters_t() :
-      position_m(10),
+      position_n(10),
       position_max(100),
       bot_code_size(64),
       bot_regs_size(32),
       bot_interrupts_size(8),
       bot_energy_max(100),
-      bot_energy_daily(5),
-      system_min_bot_count(position_max / 2)
+      bot_energy_daily(1),
+      system_min_bot_count(position_max / 10)
     { }
 
     void load(nlohmann::json& json) {
@@ -62,7 +62,7 @@ namespace genesis_n {
       if (!json.is_object())
         return;
 
-      JSON_LOAD(json, position_m);
+      JSON_LOAD(json, position_n);
       JSON_LOAD(json, position_max);
       JSON_LOAD(json, bot_code_size);
       JSON_LOAD(json, bot_regs_size);
@@ -71,7 +71,7 @@ namespace genesis_n {
       JSON_LOAD(json, bot_energy_daily);
       JSON_LOAD(json, system_min_bot_count);
 
-      position_max = (position_max / position_m) * position_m;   // correct, position_max % position_m == 0
+      position_max = (position_max / position_n) * position_n;   // correct, position_max % position_n == 0
     }
 
     void save(nlohmann::json& json) {
@@ -79,7 +79,7 @@ namespace genesis_n {
       if (!json.is_object())
         json = nlohmann::json::object();
 
-      JSON_SAVE(json, position_m);
+      JSON_SAVE(json, position_n);
       JSON_SAVE(json, position_max);
       JSON_SAVE(json, bot_code_size);
       JSON_SAVE(json, bot_regs_size);
@@ -150,7 +150,7 @@ namespace genesis_n {
 
   struct bot_t {
     std::vector<uint8_t>   code;
-    std::vector<uint8_t>   regs;   // ?uint16_t
+    std::vector<uint8_t>   regs;   // TODO uint32_t
     std::vector<uint8_t>   interrupts;
     size_t                 rip;
     size_t                 mineral;
@@ -297,6 +297,138 @@ namespace genesis_n {
   struct system_bot_updater_t : system_t {
     void update(world_t& world) override {
       TRACE_TEST;
+
+      for (auto& bot : world.bots) {
+        if (!bot)
+          continue;
+
+        LOG_TEST("");
+        LOG_TEST("bot:      %p", bot.get());
+        LOG_TEST("mineral:  %zd", bot->mineral);
+        LOG_TEST("sunlight: %zd", bot->sunlight);
+        LOG_TEST("energy:   %zd", bot->energy);
+        LOG_TEST("position: %zd", bot->position);
+        LOG_TEST("rip:      %zd", bot->rip);
+
+        // TODO for (x : bot->energy_daily)
+        if (bot->energy < bot->energy_daily) {
+          bot.reset();
+          LOG_TEST("DEAD");
+          continue;
+        }
+
+        bot->energy -= bot->energy_daily;
+
+        // TODO interrupts
+        {
+          // * сосед рядом: <%0> = <направление>
+          // * враг рядом: <%1> = <направление>
+          // * атакован: <%2> = <направление>
+          // * эненргия кончается
+          // ...
+        }
+
+        bot->rip = bot->rip % bot->code.size();
+        size_t cmd = bot->code[(bot->rip++) % bot->code.size()];
+        LOG_TEST("cmd: %zd", (size_t) cmd);
+        switch (cmd) {
+          // RISC instructions:
+          case 0: {
+            uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()];
+            LOG_TEST("BR <%d>", arg1);
+            bot->rip += arg1;
+            break;
+          } case 1: {
+            uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+            uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()];
+            LOG_TEST("SET <%%%d> <%d>", arg1, arg2);
+            bot->regs[arg1] = arg2;
+            break;
+          } case 2: {
+            uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+            uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+            LOG_TEST("MOV <%%%d> = <%%%d>", arg1, arg2);
+            bot->regs[arg1] = bot->regs[arg2];
+            break;
+          } case 3: {
+            uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+            uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+            uint8_t arg3 = bot->code[(bot->rip++) % bot->code.size()];
+            uint8_t arg4 = bot->code[(bot->rip++) % bot->code.size()];
+            LOG_TEST("IF > <%%%d> <%%%d> <%d> <%d>", arg1, arg2, arg3, arg4);
+            bot->rip += (bot->regs[arg1] > bot->regs[arg2]) ? arg3 : arg4;
+            break;
+          } case 4: {
+            uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+            uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+            uint8_t arg3 = bot->code[(bot->rip++) % bot->code.size()];
+            uint8_t arg4 = bot->code[(bot->rip++) % bot->code.size()];
+            LOG_TEST("IF < <%%%d> <%%%d> <%d> <%d>", arg1, arg2, arg3, arg4);
+            bot->rip += (bot->regs[arg1] < bot->regs[arg2]) ? arg3 : arg4;
+            break;
+          } case 5: {
+            uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+            uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+            uint8_t arg3 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+            LOG_TEST("ADD <%%%d> <%%%d> <%%%d>", arg1, arg2, arg3);
+            bot->regs[arg1] = bot->regs[arg2] + bot->regs[arg3];
+            break;
+
+            // Bot instructions:
+          } case 32: {
+            uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % 9;
+            LOG_TEST("TODO MOVE <%d>", arg1);
+            break;
+          } case 33: {
+            uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % 9;
+            LOG_TEST("TODO ATTACK <%d>", arg1);
+            break;
+          } case 34: {
+            uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+            LOG_TEST("GET MINERAL <%%%d>", arg1);
+            bot->regs[arg1] = bot->mineral % 0xFF;
+            break;
+          } case 35: {
+            uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+            LOG_TEST("GET SUNLIGHT <%%%d>", arg1);
+            bot->regs[arg1] = bot->sunlight % 0xFF;
+            break;
+          } case 36: {
+            uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+            LOG_TEST("GET ENERGY <%%%d>", arg1);
+            bot->regs[arg1] = bot->energy % 0xFF;
+            break;
+          } case 37: {
+            LOG_TEST("EXTRACT MINERAL");
+            bot->mineral = utils_t::parameters.bot_energy_max;
+            break;
+          } case 38: {
+            LOG_TEST("EXTRACT SUNLIGHT");
+            bot->sunlight = utils_t::parameters.bot_energy_max;
+            break;
+          } case 39: {
+            LOG_TEST("CONVERT MINERAL");
+            bot->energy = (bot->energy + bot->mineral) % utils_t::parameters.bot_energy_max;
+            bot->mineral = 0;
+            break;
+          } case 40: {
+            LOG_TEST("CONVERT SUNLIGHT");
+            bot->energy = (bot->energy + bot->sunlight) % utils_t::parameters.bot_energy_max;
+            bot->sunlight = 0;
+            break;
+          } case 41: {
+            LOG_TEST("TODO CLONE");
+            if (bot->energy > utils_t::parameters.bot_energy_max / 2) {
+              ;
+              // bot->energy -= utils_t::parameters.bot_energy_max / 2;
+            }
+            break;
+          } default: {
+            /*NOTHING*/
+            break;
+          }
+        }
+      }
     }
   };
 
@@ -326,7 +458,7 @@ int main(int argc, char* argv[]) {
 
   if (argc > 2) {
     parameters_fname = argv[1];
-    world_fname = argv[1];
+    world_fname = argv[2];
   }
 
   using namespace genesis_n;
@@ -336,7 +468,7 @@ int main(int argc, char* argv[]) {
   world_t world;
   world.load(world_fname);
 
-  for (size_t i{}; i < 1; ++i)
+  for (size_t i{}; i < 1000; ++i)
     world.update();
 
   world.save(world_fname);
