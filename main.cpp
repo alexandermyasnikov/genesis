@@ -29,9 +29,7 @@ struct logger_indent_test_t   : logger_indent_t<logger_indent_test_t> { };
 namespace genesis_n {
   struct world_t;
   struct system_t;
-  struct tile_t;
   struct bot_t;
-  struct tail_t;
 
   using bot_sptr_t = std::shared_ptr<bot_t>;
   using system_sptr_t = std::shared_ptr<system_t>;
@@ -43,6 +41,7 @@ namespace genesis_n {
     size_t   bot_code_size;
     size_t   bot_regs_size;
     size_t   bot_interrupts_size;
+    size_t   bot_energy_max;
     size_t   bot_energy_daily;
 
     size_t   system_min_bot_count;
@@ -53,7 +52,8 @@ namespace genesis_n {
       bot_code_size(64),
       bot_regs_size(32),
       bot_interrupts_size(8),
-      bot_energy_daily(10),
+      bot_energy_max(100),
+      bot_energy_daily(5),
       system_min_bot_count(position_max / 2)
     { }
 
@@ -67,6 +67,7 @@ namespace genesis_n {
       JSON_LOAD(json, bot_code_size);
       JSON_LOAD(json, bot_regs_size);
       JSON_LOAD(json, bot_interrupts_size);
+      JSON_LOAD(json, bot_energy_max);
       JSON_LOAD(json, bot_energy_daily);
       JSON_LOAD(json, system_min_bot_count);
 
@@ -83,6 +84,7 @@ namespace genesis_n {
       JSON_SAVE(json, bot_code_size);
       JSON_SAVE(json, bot_regs_size);
       JSON_SAVE(json, bot_interrupts_size);
+      JSON_SAVE(json, bot_energy_max);
       JSON_SAVE(json, bot_energy_daily);
       JSON_SAVE(json, system_min_bot_count);
     }
@@ -146,24 +148,15 @@ namespace genesis_n {
     { }
   };
 
-  struct skill_t {
-    uint16_t   value;
-    uint8_t    volatility;
-  };
-
-  struct tile_t {
-    bool                   is_impassable;
-    uint32_t               age;
-    std::vector<skill_t>   skills;
-  };
-
   struct bot_t {
     std::vector<uint8_t>   code;
-    std::vector<uint8_t>   regs;
+    std::vector<uint8_t>   regs;   // ?uint16_t
     std::vector<uint8_t>   interrupts;
-    std::vector<skill_t>   skills;
-    uint8_t                rip;
-    uint8_t                energy_daily;
+    size_t                 rip;
+    size_t                 mineral;
+    size_t                 sunlight;
+    size_t                 energy;
+    size_t                 energy_daily;
     size_t                 position;
 
     void update_parameters() {
@@ -176,11 +169,12 @@ namespace genesis_n {
       std::for_each(regs.begin(), regs.end(), [](auto& b) { b = utils_t::rand_u64() % 0xFF; });
       std::for_each(interrupts.begin(), interrupts.end(), [](auto& b) { b = utils_t::rand_u64() % 0xFF; });
 
-      // skill_t TODO
-
-      rip = utils_t::rand_u64() % code.size();
-      energy_daily = utils_t::parameters.bot_energy_daily;
-      position = utils_t::rand_u64() % (utils_t::parameters.position_max);
+      rip            = utils_t::rand_u64() % code.size();
+      mineral        = utils_t::parameters.bot_energy_max;
+      sunlight       = utils_t::parameters.bot_energy_max;
+      energy         = utils_t::parameters.bot_energy_max;
+      energy_daily   = utils_t::parameters.bot_energy_daily;
+      position       = utils_t::rand_u64() % (utils_t::parameters.position_max);
     }
 
     bool load(nlohmann::json& json) {
@@ -192,9 +186,11 @@ namespace genesis_n {
       JSON_LOAD(json, regs);
       JSON_LOAD(json, interrupts);
       JSON_LOAD(json, rip);
+      JSON_LOAD(json, mineral);
+      JSON_LOAD(json, sunlight);
+      JSON_LOAD(json, energy);
       JSON_LOAD(json, energy_daily);
       JSON_LOAD(json, position);
-      // skills      = json.value("skills", skills); // TODO
 
       code.resize(utils_t::parameters.bot_code_size);
       regs.resize(utils_t::parameters.bot_regs_size);
@@ -213,16 +209,17 @@ namespace genesis_n {
       JSON_SAVE(json, regs);
       JSON_SAVE(json, interrupts);
       JSON_SAVE(json, rip);
+      JSON_SAVE(json, mineral);
+      JSON_SAVE(json, sunlight);
+      JSON_SAVE(json, energy);
       JSON_SAVE(json, energy_daily);
       JSON_SAVE(json, position);
-      // json["skills"]      = skills; // TODO
     }
   };
 
   struct world_t {
     stats_t                      stats;
     std::vector<bot_sptr_t>      bots;
-    std::vector<tile_t>          tiles;
     std::vector<system_sptr_t>   systems;
 
     world_t();
@@ -235,7 +232,6 @@ namespace genesis_n {
       utils_t::load(json, name);
 
       bots.resize(utils_t::parameters.position_max);
-      tiles.resize(utils_t::parameters.position_max);
 
       auto& bots_json = json["bots"];
       if (bots_json.is_array()) {
@@ -298,11 +294,18 @@ namespace genesis_n {
     }
   };
 
+  struct system_bot_updater_t : system_t {
+    void update(world_t& world) override {
+      TRACE_TEST;
+    }
+  };
+
 
 
   world_t::world_t() {
     systems.push_back(std::make_shared<system_bot_stats_t>());
     systems.push_back(std::make_shared<system_bot_generator_t>());
+    systems.push_back(std::make_shared<system_bot_updater_t>());
   }
 
   void world_t::update() {
