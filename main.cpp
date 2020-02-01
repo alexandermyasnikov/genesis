@@ -1,4 +1,5 @@
 
+#include <filesystem>
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -106,32 +107,63 @@ namespace genesis_n {
       return dis(gen);
     }
 
-    static void update_parameters(const std::string& name) {
+    static void update_parameters(const std::string& name, const std::string& name_tmp) {
       TRACE_TEST;
       nlohmann::json json;
-      utils_t::load(json, name);
+      utils_t::load(json, name, name_tmp);
       parameters.load(json);
       json = {};
       parameters.save(json);
-      utils_t::save(json, name);
+      utils_t::save(json, name, name_tmp);
     }
 
-    static bool load(nlohmann::json& json, const std::string& name) {
+    static void rename(const std::string& name_old, const std::string& name_new) {
+      TRACE_TEST;
+      std::error_code ec;
+      std::filesystem::rename(name_old, name_new, ec);
+      if (ec) {
+        std::cerr << "WARN: " << ec.message() << std::endl;
+      }
+    }
+
+    static void remove(const std::string& name) {
+      TRACE_TEST;
+      std::error_code ec;
+      std::filesystem::remove(name, ec);
+      if (ec) {
+        std::cerr << "WARN: " << ec.message() << std::endl;
+      }
+    }
+
+    static bool load(nlohmann::json& json, const std::string& name, const std::string& name_tmp) {
       TRACE_TEST;
       try {
         std::ifstream file(name);
         file >> json;
         return true;
       } catch (const std::exception& e) {
-        return false;
+        std::cerr << "WARN: " << e.what() << std::endl;
       }
+
+      try {
+        std::ifstream file(name_tmp);
+        file >> json;
+        return true;
+      } catch (const std::exception& e) {
+        std::cerr << "WARN: " << e.what() << std::endl;
+      }
+      utils_t::remove(name_tmp);
+      return false;
     }
 
-    static bool save(const nlohmann::json& json, const std::string& name) {
+    static bool save(const nlohmann::json& json, const std::string& name, const std::string& name_tmp) {
       TRACE_TEST;
       try {
-        std::ofstream file(name);
+        std::ofstream file(name_tmp);
         file << std::setw(2) << json;
+
+        utils_t::rename(name_tmp, name);
+        utils_t::remove(name_tmp);
         return true;
       } catch (const std::exception& e) {
         std::cerr << "WARN: " << e.what() << std::endl;
@@ -226,10 +258,10 @@ namespace genesis_n {
 
     void update();
 
-    void load(const std::string& name) {
+    void load(const std::string& name, const std::string& name_tmp) {
       TRACE_TEST;
       nlohmann::json json;
-      utils_t::load(json, name);
+      utils_t::load(json, name, name_tmp);
 
       bots.resize(utils_t::parameters.position_max);
 
@@ -245,7 +277,7 @@ namespace genesis_n {
       }
     }
 
-    void save(const std::string& name) {
+    void save(const std::string& name, const std::string& name_tmp) {
       TRACE_TEST;
       nlohmann::json json;
 
@@ -259,7 +291,7 @@ namespace genesis_n {
         }
       }
 
-      utils_t::save(json, name);
+      utils_t::save(json, name, name_tmp);
     }
   };
 
@@ -455,23 +487,25 @@ int main(int argc, char* argv[]) {
 
   std::string parameters_fname = "parameters.json";
   std::string world_fname = "world.json";
+  std::string tmp_fname = "tmp.json";
 
-  if (argc > 2) {
-    parameters_fname = argv[1];
-    world_fname = argv[2];
+  if (argc > 3) {
+    parameters_fname   = argv[1];
+    world_fname        = argv[2];
+    tmp_fname          = argv[3];
   }
 
   using namespace genesis_n;
 
-  utils_t::update_parameters(parameters_fname);
+  utils_t::update_parameters(parameters_fname, tmp_fname);
 
   world_t world;
-  world.load(world_fname);
+  world.load(world_fname, tmp_fname);
 
   for (size_t i{}; i < 1000; ++i)
     world.update();
 
-  world.save(world_fname);
+  world.save(world_fname, tmp_fname);
 
   return 0;
 }
