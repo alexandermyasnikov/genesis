@@ -1,10 +1,10 @@
 
 # GENESIS
 
-Author: Alexander Myasnikov
-mailto:myasnikov.alexander.s@gmail.com
-git:https://gitlab.com/amyasnikov/genesis
-site:http://amyasnikov.pro
+* Author: Alexander Myasnikov
+* mailto:myasnikov.alexander.s@gmail.com
+* git:https://gitlab.com/amyasnikov/genesis
+* site:http://amyasnikov.pro
 
 
 
