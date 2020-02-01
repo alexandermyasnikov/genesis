@@ -36,53 +36,6 @@ namespace genesis_n {
   using bot_sptr_t = std::shared_ptr<bot_t>;
   using system_sptr_t = std::shared_ptr<system_t>;
 
-  struct utils_t {
-    inline static size_t seed = time(0);
-
-    static double rand_double() {
-      static std::mt19937 gen(seed);
-      static std::uniform_real_distribution<double> dis;
-      return dis(gen);
-    }
-
-    static size_t rand_u64() {
-      static std::mt19937 gen(seed);
-      static std::uniform_int_distribution<size_t> dis;
-      return dis(gen);
-    }
-
-    static bool load(nlohmann::json& json, const std::string& name) {
-      TRACE_TEST;
-      try {
-        std::ifstream file(name);
-        file >> json;
-        return true;
-      } catch (const std::exception& e) {
-        return false;
-      }
-    }
-
-    static bool save(const nlohmann::json& json, const std::string& name) {
-      TRACE_TEST;
-      try {
-        std::ofstream file(name);
-        file << std::setw(2) << json;
-        return true;
-      } catch (const std::exception& e) {
-        std::cerr << "WARN: " << e.what() << std::endl;
-        return false;
-      }
-    }
-  };
-
-  struct stats_t {
-    size_t   bots_alive;
-
-    stats_t() :
-      bots_alive(0)
-    { }
-  };
-
   struct parameters_t {
     size_t   position_m;
     size_t   position_max;
@@ -135,6 +88,64 @@ namespace genesis_n {
     }
   };
 
+  struct utils_t {
+    inline static size_t seed = time(0);
+    inline static parameters_t parameters = {};
+
+    static double rand_double() {
+      static std::mt19937 gen(seed);
+      static std::uniform_real_distribution<double> dis;
+      return dis(gen);
+    }
+
+    static size_t rand_u64() {
+      static std::mt19937 gen(seed);
+      static std::uniform_int_distribution<size_t> dis;
+      return dis(gen);
+    }
+
+    static void update_parameters(const std::string& name) {
+      TRACE_TEST;
+      nlohmann::json json;
+      utils_t::load(json, name);
+      parameters.load(json);
+      json = {};
+      parameters.save(json);
+      utils_t::save(json, name);
+    }
+
+    static bool load(nlohmann::json& json, const std::string& name) {
+      TRACE_TEST;
+      try {
+        std::ifstream file(name);
+        file >> json;
+        return true;
+      } catch (const std::exception& e) {
+        return false;
+      }
+    }
+
+    static bool save(const nlohmann::json& json, const std::string& name) {
+      TRACE_TEST;
+      try {
+        std::ofstream file(name);
+        file << std::setw(2) << json;
+        return true;
+      } catch (const std::exception& e) {
+        std::cerr << "WARN: " << e.what() << std::endl;
+        return false;
+      }
+    }
+  };
+
+  struct stats_t {
+    size_t   bots_alive;
+
+    stats_t() :
+      bots_alive(0)
+    { }
+  };
+
   struct skill_t {
     uint16_t   value;
     uint8_t    volatility;
@@ -155,11 +166,11 @@ namespace genesis_n {
     uint8_t                energy_daily;
     size_t                 position;
 
-    void update_parameters(parameters_t& parameters) {
+    void update_parameters() {
       TRACE_TEST;
-      code.resize(parameters.bot_code_size);
-      regs.resize(parameters.bot_regs_size);
-      interrupts.resize(parameters.bot_interrupts_size);
+      code.resize(utils_t::parameters.bot_code_size);
+      regs.resize(utils_t::parameters.bot_regs_size);
+      interrupts.resize(utils_t::parameters.bot_interrupts_size);
 
       std::for_each(code.begin(), code.end(), [](auto& b) { b = utils_t::rand_u64() % 0xFF; });
       std::for_each(regs.begin(), regs.end(), [](auto& b) { b = utils_t::rand_u64() % 0xFF; });
@@ -168,8 +179,8 @@ namespace genesis_n {
       // skill_t TODO
 
       rip = utils_t::rand_u64() % code.size();
-      energy_daily = parameters.bot_energy_daily;
-      position = utils_t::rand_u64() % (parameters.position_max);
+      energy_daily = utils_t::parameters.bot_energy_daily;
+      position = utils_t::rand_u64() % (utils_t::parameters.position_max);
     }
 
     bool load(nlohmann::json& json) {
@@ -185,9 +196,9 @@ namespace genesis_n {
       position       = json.value("position", position);
       // skills      = json.value("skills", skills); // TODO
 
-      // code.resize(parameters.bot_code_size);
-      // regs.resize(parameters.bot_regs_size);
-      // interrupts.resize(parameters.bot_interrupts_size);
+      code.resize(utils_t::parameters.bot_code_size);
+      regs.resize(utils_t::parameters.bot_regs_size);
+      interrupts.resize(utils_t::parameters.bot_interrupts_size);
 
       return true;
     }
@@ -210,7 +221,6 @@ namespace genesis_n {
 
   struct world_t {
     stats_t                      stats;
-    parameters_t                 parameters;
     std::vector<bot_sptr_t>      bots;
     std::vector<tile_t>          tiles;
     std::vector<system_sptr_t>   systems;
@@ -219,28 +229,19 @@ namespace genesis_n {
 
     void update();
 
-    void update_parameters(const std::string& name) {
-      TRACE_TEST;
-      nlohmann::json json;
-      utils_t::load(json, name);
-      parameters.load(json);
-      parameters.save(json);
-      utils_t::save(json, name);
-    }
-
     void load(const std::string& name) {
       TRACE_TEST;
       nlohmann::json json;
       utils_t::load(json, name);
 
-      bots.resize(parameters.position_max);
-      tiles.resize(parameters.position_max);
+      bots.resize(utils_t::parameters.position_max);
+      tiles.resize(utils_t::parameters.position_max);
 
       auto& bots_json = json["bots"];
       if (bots_json.is_array()) {
         for (size_t i{}; i < bots_json.size(); ++i) {
           bot_t bot;
-          bot.update_parameters(parameters);
+          bot.update_parameters();
           if (bot.load(bots_json[i]) && bot.position < bots.size()) {
             bots[bot.position] = std::make_shared<bot_t>(bot);
           }
@@ -286,9 +287,9 @@ namespace genesis_n {
     void update(world_t& world) override {
       TRACE_TEST;
 
-      if (world.stats.bots_alive < world.parameters.system_min_bot_count) {
+      if (world.stats.bots_alive < utils_t::parameters.system_min_bot_count) {
         bot_t bot_new;
-        bot_new.update_parameters(world.parameters);
+        bot_new.update_parameters();
         auto& bot = world.bots[bot_new.position];
         if (!world.bots[bot_new.position]) {
           bot = std::make_shared<bot_t>(bot_new);
@@ -327,8 +328,9 @@ int main(int argc, char* argv[]) {
 
   using namespace genesis_n;
 
+  utils_t::update_parameters(parameters_fname);
+
   world_t world;
-  world.update_parameters(parameters_fname);
   world.load(world_fname);
 
   for (size_t i{}; i < 1; ++i)
