@@ -1,8 +1,17 @@
 
-### GENESIS
+# GENESIS
+
+Author: Alexander Myasnikov
+mailto:myasnikov.alexander.s@gmail.com
+git:https://gitlab.com/amyasnikov/genesis
+site:http://amyasnikov.pro
 
 
-# Взаимодействие ботов
+
+# Цель
+
+* Проверить, смогут ли боты приспособиться к окружающей среде при помощи генетических алгоритмов
+
 
 
 ### Bot (сущность)
@@ -57,6 +66,7 @@
 
 * Элементы
   * Сущность
+  * Клетка
 
 
 
