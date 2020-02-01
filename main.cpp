@@ -26,31 +26,18 @@ using namespace std::chrono_literals;
 
 
 
-struct env_t {
+namespace genesis_n {
+  struct world_t;
+  struct system_t;
   struct tile_t;
   struct bot_t;
-  struct system_t;
-  struct world_t;
+  struct tail_t;
 
-  using system_sptr_t = std::shared_ptr<system_t>;
   using bot_sptr_t = std::shared_ptr<bot_t>;
-
-  struct config_t {
-    size_t n;
-    size_t m;
-
-    config_t() :
-      n(10),
-      m(20)
-    { }
-  };
+  using system_sptr_t = std::shared_ptr<system_t>;
 
   struct utils_t {
-    inline static size_t seed;
-
-    static void init(const config_t& config) {
-      seed = time(0);
-    }
+    inline static size_t seed = time(0);
 
     static double rand_double() {
       static std::mt19937 gen(seed);
@@ -62,22 +49,6 @@ struct env_t {
       static std::mt19937 gen(seed);
       static std::uniform_int_distribution<size_t> dis;
       return dis(gen);
-    }
-
-    static bool load(const nlohmann::json& json) {
-      try {
-        auto& json_utils = json.at("utils");
-        seed = json_utils.at("seed");
-        return true;
-      } catch (const std::exception& e) {
-        std::cerr << "WARN: " << e.what() << std::endl;
-        return false;
-      }
-    }
-
-    static void save(nlohmann::json& json) {
-      auto& json_utils = json["utils"];
-      json_utils["seed"] = seed;
     }
 
     static bool load(nlohmann::json& json, const std::string& name) {
@@ -95,7 +66,7 @@ struct env_t {
       TRACE_TEST;
       try {
         std::ofstream file(name);
-        file << /*std::setw(2) <<*/ json;
+        file << std::setw(2) << json;
         return true;
       } catch (const std::exception& e) {
         std::cerr << "WARN: " << e.what() << std::endl;
@@ -104,41 +75,63 @@ struct env_t {
     }
   };
 
-  struct world_t {
-    size_t n;
-    size_t m;
-    std::vector<bot_sptr_t>      bots;
-    std::vector<tile_t>          tiles;
-    std::vector<system_sptr_t>   systems;
+  struct stats_t {
+    size_t   bots_alive;
 
-    void init(const config_t& config) {
-      n = config.n;
-      m = config.m;
-      // systems.push_back(nullptr);
-    }
+    stats_t() :
+      bots_alive(0)
+    { }
+  };
 
-    void update() {
-      for (auto& system : systems) {
-        // system.update(*this, );
-      }
-    }
+  struct parameters_t {
+    size_t   position_m;
+    size_t   position_max;
 
-    bool load(const nlohmann::json& json) {
-      try {
-        auto& json_world = json.at("world");
-        n = json_world.at("n");
-        m = json_world.at("m");
-        return true;
-      } catch (const std::exception& e) {
-        std::cerr << "WARN: " << e.what() << std::endl;
-        return false;
-      }
+    size_t   bot_code_size;
+    size_t   bot_regs_size;
+    size_t   bot_interrupts_size;
+    size_t   bot_energy_daily;
+
+    size_t   system_min_bot_count;
+
+    parameters_t() :
+      position_m(10),
+      position_max(100),
+      bot_code_size(64),
+      bot_regs_size(32),
+      bot_interrupts_size(8),
+      bot_energy_daily(10),
+      system_min_bot_count(position_max / 2)
+    { }
+
+    void load(nlohmann::json& json) {
+      TRACE_TEST;
+      if (!json.is_object())
+        return;
+
+      position_m             = json.value("position_m",             position_m);
+      position_max           = json.value("position_max",           position_max);
+      bot_code_size          = json.value("bot_code_size",          bot_code_size);
+      bot_regs_size          = json.value("bot_regs_size",          bot_regs_size);
+      bot_interrupts_size    = json.value("bot_interrupts_size",    bot_interrupts_size);
+      bot_energy_daily       = json.value("bot_energy_daily",       bot_energy_daily);
+      system_min_bot_count   = json.value("system_min_bot_count",   system_min_bot_count);
+
+      position_max = (position_max / position_m) * position_m;   // correct, position_max % position_m == 0
     }
 
     void save(nlohmann::json& json) {
-      auto& json_world = json["world"];
-      json_world["n"] = n;
-      json_world["m"] = m;
+      TRACE_TEST;
+      if (!json.is_object())
+        json = nlohmann::json::object();
+
+      json["position_m"]             = position_m;
+      json["position_max"]           = position_max;
+      json["bot_code_size"]          = bot_code_size;
+      json["bot_regs_size"]          = bot_regs_size;
+      json["bot_interrupts_size"]    = bot_interrupts_size;
+      json["bot_energy_daily"]       = bot_energy_daily;
+      json["system_min_bot_count"]   = system_min_bot_count;
     }
   };
 
@@ -154,73 +147,194 @@ struct env_t {
   };
 
   struct bot_t {
-    std::vector<uint8_t>   data;          // 64
-    std::vector<uint8_t>   regs;          // 32
-    std::vector<uint8_t>   interrupts;    // 8
+    std::vector<uint8_t>   code;
+    std::vector<uint8_t>   regs;
+    std::vector<uint8_t>   interrupts;
     std::vector<skill_t>   skills;
     uint8_t                rip;
     uint8_t                energy_daily;
     size_t                 position;
 
-    void update(world_t& world) {
+    void update_parameters(parameters_t& parameters) {
       TRACE_TEST;
+      code.resize(parameters.bot_code_size);
+      regs.resize(parameters.bot_regs_size);
+      interrupts.resize(parameters.bot_interrupts_size);
+
+      std::for_each(code.begin(), code.end(), [](auto& b) { b = utils_t::rand_u64() % 0xFF; });
+      std::for_each(regs.begin(), regs.end(), [](auto& b) { b = utils_t::rand_u64() % 0xFF; });
+      std::for_each(interrupts.begin(), interrupts.end(), [](auto& b) { b = utils_t::rand_u64() % 0xFF; });
+
+      // skill_t TODO
+
+      rip = utils_t::rand_u64() % code.size();
+      energy_daily = parameters.bot_energy_daily;
+      position = utils_t::rand_u64() % (parameters.position_max);
+    }
+
+    bool load(nlohmann::json& json) {
+      TRACE_TEST;
+      if (!json.is_object())
+        return false;
+
+      code           = json.value("code", code);
+      regs           = json.value("regs", regs);
+      interrupts     = json.value("interrupts", interrupts);
+      rip            = json.value("rip", rip);
+      energy_daily   = json.value("energy_daily", energy_daily);
+      position       = json.value("position", position);
+      // skills      = json.value("skills", skills); // TODO
+
+      // code.resize(parameters.bot_code_size);
+      // regs.resize(parameters.bot_regs_size);
+      // interrupts.resize(parameters.bot_interrupts_size);
+
+      return true;
+    }
+
+    void save(nlohmann::json& json) {
+      TRACE_TEST;
+
+      if (!json.is_object())
+        json = nlohmann::json::object();
+
+      json["code"]           = code;
+      json["regs"]           = regs;
+      json["interrupts"]     = interrupts;
+      json["rip"]            = rip;
+      json["energy_daily"]   = energy_daily;
+      json["position"]       = position;
+      // json["skills"]      = skills; // TODO
+    }
+  };
+
+  struct world_t {
+    stats_t                      stats;
+    parameters_t                 parameters;
+    std::vector<bot_sptr_t>      bots;
+    std::vector<tile_t>          tiles;
+    std::vector<system_sptr_t>   systems;
+
+    world_t();
+
+    void update();
+
+    void update_parameters(const std::string& name) {
+      TRACE_TEST;
+      nlohmann::json json;
+      utils_t::load(json, name);
+      parameters.load(json);
+      parameters.save(json);
+      utils_t::save(json, name);
+    }
+
+    void load(const std::string& name) {
+      TRACE_TEST;
+      nlohmann::json json;
+      utils_t::load(json, name);
+
+      bots.resize(parameters.position_max);
+      tiles.resize(parameters.position_max);
+
+      auto& bots_json = json["bots"];
+      if (bots_json.is_array()) {
+        for (size_t i{}; i < bots_json.size(); ++i) {
+          bot_t bot;
+          bot.update_parameters(parameters);
+          if (bot.load(bots_json[i]) && bot.position < bots.size()) {
+            bots[bot.position] = std::make_shared<bot_t>(bot);
+          }
+        }
+      }
+    }
+
+    void save(const std::string& name) {
+      TRACE_TEST;
+      nlohmann::json json;
+
+      auto& bots_json = json["bots"];
+      bots_json = nlohmann::json::array();
+      for (auto& bot : bots) {
+        if (bot) {
+          nlohmann::json json;
+          bot->save(json);
+          bots_json.push_back(json);
+        }
+      }
+
+      utils_t::save(json, name);
     }
   };
 
   struct system_t {
-    virtual void update(world_t& world, bot_t& bot) = 0;
+    virtual void update(world_t& world) = 0;
+  };
+
+  struct system_bot_stats_t : system_t {
+    void update(world_t& world) override {
+      TRACE_TEST;
+      auto& stats = world.stats;
+      stats.bots_alive = 0;
+      std::for_each(world.bots.begin(), world.bots.end(),
+          [&stats](const auto& bot) { if (bot) stats.bots_alive++; });
+
+      LOG_TEST("stats.bots_alive: %zd", stats.bots_alive);
+    }
+  };
+
+  struct system_bot_generator_t : system_t {
+    void update(world_t& world) override {
+      TRACE_TEST;
+
+      if (world.stats.bots_alive < world.parameters.system_min_bot_count) {
+        bot_t bot_new;
+        bot_new.update_parameters(world.parameters);
+        auto& bot = world.bots[bot_new.position];
+        if (!world.bots[bot_new.position]) {
+          bot = std::make_shared<bot_t>(bot_new);
+        }
+      }
+    }
   };
 
 
 
-  world_t                      world;
-
-
-
-  void update() {
-    world.update();
+  world_t::world_t() {
+    systems.push_back(std::make_shared<system_bot_stats_t>());
+    systems.push_back(std::make_shared<system_bot_generator_t>());
   }
 
-  void init(const config_t& config) {
-    utils_t::init(config);
-    world.init(config);
+  void world_t::update() {
+    TRACE_TEST;
+    for (auto& system : systems) {
+      system->update(*this);
+    }
   }
-
-  bool load(const std::string& name) {
-    nlohmann::json json;
-    return !utils_t::load(json, name)
-      || !utils_t::load(json)
-      || !world.load(json);
-  }
-
-  void save(const std::string& name) {
-    nlohmann::json json;
-    utils_t::save(json);
-    world.save(json);
-    utils_t::save(json, name);
-  }
-};
+}
 
 
 
 int main(int argc, char* argv[]) {
   TRACE_TEST;
 
-  env_t env;
-  std::string name = "default.json";
+  std::string parameters_fname = "parameters.json";
+  std::string world_fname = "world.json";
 
-  if (argc > 1) {
-    name = argv[1];
+  if (argc > 2) {
+    parameters_fname = argv[1];
+    world_fname = argv[1];
   }
 
-  if (!env.load(name)) {
-    env_t::config_t config;
-    env.init(config);
-  }
+  using namespace genesis_n;
 
-  env.update();
+  world_t world;
+  world.update_parameters(parameters_fname);
+  world.load(world_fname);
 
-  env.save(name);
+  for (size_t i{}; i < 1; ++i)
+    world.update();
+
+  world.save(world_fname);
 
   return 0;
 }
