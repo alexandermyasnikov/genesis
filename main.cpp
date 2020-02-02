@@ -11,14 +11,22 @@
 #include <thread>
 #include <list>
 
+#include <sys/epoll.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+
 #include "json.hpp"
 #include "debug_logger.h"
 
 #define JSON_SAVE(json, name) json[#name] = name
 #define JSON_LOAD(json, name) name = json.value(#name, name)
 
-#define TRACE_TEST                 DEBUG_LOGGER("test ", logger_indent_test_t::indent)
-#define LOG_TEST(...)              DEBUG_LOG("test ", logger_indent_test_t::indent, __VA_ARGS__)
+#define TRACE_TEST                 // DEBUG_LOGGER("test ", logger_indent_test_t::indent)
+#define LOG_TEST(...)              // DEBUG_LOG("test ", logger_indent_test_t::indent, __VA_ARGS__)
+#define LOG_EPOLL(...)             DEBUG_LOG("epoll", logger_indent_test_t::indent, __VA_ARGS__)
 
 using namespace std::chrono_literals;
 
@@ -46,6 +54,8 @@ namespace genesis_n {
     size_t   bot_energy_daily;
 
     size_t   system_min_bot_count;
+    size_t   system_epoll_port;
+    std::string   system_epoll_ip;
 
     parameters_t() :
       position_n(10),
@@ -55,7 +65,9 @@ namespace genesis_n {
       bot_interrupts_size(8),
       bot_energy_max(100),
       bot_energy_daily(1),
-      system_min_bot_count(position_max / 10)
+      system_min_bot_count(position_max / 10),
+      system_epoll_port(8282),
+      system_epoll_ip("127.0.0.1")
     { }
 
     void load(nlohmann::json& json) {
@@ -71,6 +83,8 @@ namespace genesis_n {
       JSON_LOAD(json, bot_energy_max);
       JSON_LOAD(json, bot_energy_daily);
       JSON_LOAD(json, system_min_bot_count);
+      JSON_LOAD(json, system_epoll_port);
+      JSON_LOAD(json, system_epoll_ip);
 
       position_max = (position_max / position_n) * position_n;   // correct, position_max % position_n == 0
     }
@@ -88,6 +102,8 @@ namespace genesis_n {
       JSON_SAVE(json, bot_energy_max);
       JSON_SAVE(json, bot_energy_daily);
       JSON_SAVE(json, system_min_bot_count);
+      JSON_SAVE(json, system_epoll_port);
+      JSON_SAVE(json, system_epoll_ip);
     }
   };
 
@@ -258,6 +274,8 @@ namespace genesis_n {
 
     void update();
 
+    void update_parameters();
+
     void load(const std::string& name, const std::string& name_tmp) {
       TRACE_TEST;
       nlohmann::json json;
@@ -296,6 +314,7 @@ namespace genesis_n {
   };
 
   struct system_t {
+    virtual void update_parameters() { }
     virtual void update(world_t& world) = 0;
   };
 
@@ -464,18 +483,203 @@ namespace genesis_n {
     }
   };
 
+  struct system_epoll_t : system_t {
+    int                  sfd;
+    int                  epfd;
+    struct epoll_event   events[1024];
+
+
+    void update_parameters() override {
+      TRACE_TEST;
+      LOG_EPOLL("epoll starting ...");
+
+      epfd = epoll_create1(0);
+      LOG_EPOLL("epfd: %d", epfd);
+      if (epfd < 0) {
+        std::cerr << "WARN: epfd: " << epfd << std::endl;
+        exit(-1);
+      }
+
+      sfd = socket(AF_INET, SOCK_STREAM, 0);
+      LOG_EPOLL("sfd: %d", sfd);
+      if (sfd < 0) {
+        std::cerr << "WARN: sfd: " << sfd << std::endl;
+        exit(-1);
+      }
+
+      int on = 1;
+      int ret = setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+      LOG_EPOLL("setsockopt(...): %d", ret);
+      if (ret < 0) {
+        std::cerr << "WARN: ret: " << ret << std::endl;
+        exit(-1);
+      }
+
+      struct in_addr ip_addr = {0};
+      ret = inet_pton(AF_INET, utils_t::parameters.system_epoll_ip.c_str(), &ip_addr);
+      LOG_EPOLL("inet_pton(...): %d", ret);
+      if (ret < 0) {
+        std::cerr << "WARN: ret: " << ret << std::endl;
+        exit(-1);
+      }
+
+      struct sockaddr_in addr;
+      memset((char *) &addr, 0, sizeof(addr));
+      addr.sin_family      = AF_INET;
+      addr.sin_addr.s_addr = ip_addr.s_addr;
+      addr.sin_port        = htons((uint16_t) utils_t::parameters.system_epoll_port);
+
+      ret = bind(sfd, (struct sockaddr *) &addr, sizeof(addr));
+      LOG_EPOLL("bind(...): %d", ret);
+      if (ret < 0) {
+        std::cerr << "WARN: ret: " << ret << std::endl;
+        exit(-1);
+      }
+
+      int flags = fcntl(sfd, F_GETFL, 0);
+      if (flags == -1) {
+        flags = 0;
+      }
+
+      ret = fcntl(sfd, F_SETFL, flags | O_NONBLOCK);
+      LOG_EPOLL("fcntl(...): %d", ret);
+      if (ret < 0) {
+        std::cerr << "WARN: ret: " << ret << std::endl;
+        exit(-1);
+      }
+
+      ret = listen(sfd, SOMAXCONN);
+      LOG_EPOLL("listen(...): %d", ret);
+      if (ret < 0) {
+        std::cerr << "WARN: ret: " << ret << std::endl;
+        exit(-1);
+      }
+
+      struct epoll_event event;
+      event.data.fd = sfd;
+      event.events = EPOLLIN;
+
+      ret = epoll_ctl(epfd, EPOLL_CTL_ADD, sfd, &event);
+      LOG_EPOLL("epoll_ctl(...): %d", ret);
+      if (ret < 0) {
+        std::cerr << "WARN: ret: " << ret << std::endl;
+        exit(-1);
+      }
+
+      LOG_EPOLL("epoll started");
+    }
+
+    void update(world_t& world) override {
+      TRACE_TEST;
+
+      int event_count = epoll_wait(epfd, events, 1024, 0);
+
+      for (int i = 0; i < event_count; i++) {
+        struct epoll_event* event = &events[i];
+        LOG_EPOLL("events 0x%x", event->events);
+        LOG_EPOLL("data.fd: %d", event->data.fd);
+
+        if ((event->events & EPOLLERR) ||
+            (event->events & EPOLLHUP) ||
+            (!(event->events & EPOLLIN)))
+        {
+          LOG_EPOLL("epoll error");
+          int ret = close(event->data.fd);
+          if (ret < 0) {
+            std::cerr << "WARN: ret: " << ret << std::endl;
+          }
+          continue;
+        }
+
+        if (event->data.fd == sfd) {
+          LOG_EPOLL("new connection");
+
+          int fd = accept(sfd , 0, 0);
+          LOG_EPOLL("fd: %d", fd);
+          if (fd < 0) {
+            std::cerr << "WARN: fd: " << fd << std::endl;
+            exit(-1);
+          }
+
+          int flags = fcntl(fd, F_GETFL, 0);
+          if (flags == -1) {
+            flags = 0;
+          }
+
+          int ret = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+          LOG_EPOLL("fcntl(...): %d", ret);
+          if (ret < 0) {
+            std::cerr << "WARN: ret: " << ret << std::endl;
+            exit(-1);
+          }
+
+          struct epoll_event event;
+          event.data.fd = fd;
+          event.events = EPOLLIN;
+          ret = epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &event);
+          LOG_EPOLL("epoll_ctl(...): %d", ret);
+          if (ret < 0) {
+            std::cerr << "WARN: ret: " << ret << std::endl;
+            exit(-1);
+          }
+
+          continue;
+        }
+
+        {
+          uint8_t buffer[1024];
+
+          int bytes_read = read(event->data.fd, buffer, sizeof(buffer));
+          LOG_EPOLL("read: fd: %d, bytes_read: %d", event->data.fd, bytes_read);
+          if (bytes_read == -1) {
+            if (errno != EAGAIN) {
+              LOG_EPOLL("errno: !EAGAIN");
+              close(event->data.fd);
+            }
+          } else if (bytes_read == 0) {
+            LOG_EPOLL("bytes_read == 0");
+            shutdown(event->data.fd, SHUT_RDWR);
+            close(event->data.fd);
+          } else {
+            LOG_EPOLL("msg: ");
+            LOG_EPOLL("%.*s", bytes_read, buffer);
+            if (bytes_read < 1024) {
+              std::string response =
+                "HTTP/1.1 200 OK\n"
+                "Connection: close\n"
+                "\n"
+                "<h1>amyasnikov.pro: genesis</h1>\n";
+              int bytes_write = write(event->data.fd, response.c_str(), response.size());
+              LOG_EPOLL("write response: %d", bytes_write);
+              close(event->data.fd);
+            }
+          }
+
+        }
+      }
+    }
+  };
+
 
 
   world_t::world_t() {
     systems.push_back(std::make_shared<system_bot_stats_t>());
     systems.push_back(std::make_shared<system_bot_generator_t>());
     systems.push_back(std::make_shared<system_bot_updater_t>());
+    systems.push_back(std::make_shared<system_epoll_t>());
   }
 
   void world_t::update() {
     TRACE_TEST;
     for (auto& system : systems) {
       system->update(*this);
+    }
+  }
+
+  void world_t::update_parameters() {
+    TRACE_TEST;
+    for (auto& system : systems) {
+      system->update_parameters();
     }
   }
 }
@@ -502,10 +706,15 @@ int main(int argc, char* argv[]) {
   world_t world;
   world.load(world_fname, tmp_fname);
 
-  for (size_t i{}; i < 1000; ++i)
-    world.update();
+  world.update_parameters();
 
-  world.save(world_fname, tmp_fname);
+  for (size_t i{}; true; ++i) {
+    world.update();
+    if (i % 100000 == 0) {
+      world.save(world_fname, tmp_fname);
+    }
+  }
+
 
   return 0;
 }
