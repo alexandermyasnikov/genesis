@@ -9,6 +9,7 @@
 #include <vector>
 #include <chrono>
 #include <thread>
+#include <deque>
 #include <list>
 
 #include <sys/epoll.h>
@@ -484,31 +485,35 @@ namespace genesis_n {
   };
 
   struct system_epoll_t : system_t {
-    int                  sfd;
-    int                  epfd;
-    struct epoll_event   events[1024];
+    using buffers_t = std::map<int/*fd*/, std::pair<std::deque<char>/*req*/, std::deque<char>/*resp*/>>;
 
+    static const size_t  events_count = 16;
+    int                  fd_listen;
+    int                  fd_epoll;
+    struct epoll_event   events[events_count];
+    buffers_t            buffers;
+    char                 buffer_tmp[1024];
 
     void update_parameters() override {
       TRACE_TEST;
       LOG_EPOLL("epoll starting ...");
 
-      epfd = epoll_create1(0);
-      LOG_EPOLL("epfd: %d", epfd);
-      if (epfd < 0) {
-        std::cerr << "WARN: epfd: " << epfd << std::endl;
+      fd_epoll = epoll_create1(0);
+      LOG_EPOLL("fd_epoll: %d", fd_epoll);
+      if (fd_epoll < 0) {
+        std::cerr << "WARN: fd_epoll: " << fd_epoll << std::endl;
         exit(-1);
       }
 
-      sfd = socket(AF_INET, SOCK_STREAM, 0);
-      LOG_EPOLL("sfd: %d", sfd);
-      if (sfd < 0) {
-        std::cerr << "WARN: sfd: " << sfd << std::endl;
+      fd_listen = socket(AF_INET, SOCK_STREAM, 0);
+      LOG_EPOLL("fd_listen: %d", fd_listen);
+      if (fd_listen < 0) {
+        std::cerr << "WARN: fd_listen: " << fd_listen << std::endl;
         exit(-1);
       }
 
       int on = 1;
-      int ret = setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+      int ret = setsockopt(fd_listen, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
       LOG_EPOLL("setsockopt(...): %d", ret);
       if (ret < 0) {
         std::cerr << "WARN: ret: " << ret << std::endl;
@@ -529,26 +534,26 @@ namespace genesis_n {
       addr.sin_addr.s_addr = ip_addr.s_addr;
       addr.sin_port        = htons((uint16_t) utils_t::parameters.system_epoll_port);
 
-      ret = bind(sfd, (struct sockaddr *) &addr, sizeof(addr));
+      ret = bind(fd_listen, (struct sockaddr *) &addr, sizeof(addr));
       LOG_EPOLL("bind(...): %d", ret);
       if (ret < 0) {
         std::cerr << "WARN: ret: " << ret << std::endl;
         exit(-1);
       }
 
-      int flags = fcntl(sfd, F_GETFL, 0);
+      int flags = fcntl(fd_listen, F_GETFL, 0);
       if (flags == -1) {
         flags = 0;
       }
 
-      ret = fcntl(sfd, F_SETFL, flags | O_NONBLOCK);
+      ret = fcntl(fd_listen, F_SETFL, flags | O_NONBLOCK);
       LOG_EPOLL("fcntl(...): %d", ret);
       if (ret < 0) {
         std::cerr << "WARN: ret: " << ret << std::endl;
         exit(-1);
       }
 
-      ret = listen(sfd, SOMAXCONN);
+      ret = listen(fd_listen, SOMAXCONN);
       LOG_EPOLL("listen(...): %d", ret);
       if (ret < 0) {
         std::cerr << "WARN: ret: " << ret << std::endl;
@@ -556,10 +561,10 @@ namespace genesis_n {
       }
 
       struct epoll_event event;
-      event.data.fd = sfd;
+      event.data.fd = fd_listen;
       event.events = EPOLLIN;
 
-      ret = epoll_ctl(epfd, EPOLL_CTL_ADD, sfd, &event);
+      ret = epoll_ctl(fd_epoll, EPOLL_CTL_ADD, fd_listen, &event);
       LOG_EPOLL("epoll_ctl(...): %d", ret);
       if (ret < 0) {
         std::cerr << "WARN: ret: " << ret << std::endl;
@@ -572,7 +577,7 @@ namespace genesis_n {
     void update(world_t& world) override {
       TRACE_TEST;
 
-      int event_count = epoll_wait(epfd, events, 1024, 0);
+      int event_count = epoll_wait(fd_epoll, events, events_count, 0);
 
       for (int i = 0; i < event_count; i++) {
         struct epoll_event* event = &events[i];
@@ -591,10 +596,10 @@ namespace genesis_n {
           continue;
         }
 
-        if (event->data.fd == sfd) {
+        if (event->data.fd == fd_listen) {
           LOG_EPOLL("new connection");
 
-          int fd = accept(sfd , 0, 0);
+          int fd = accept(fd_listen , 0, 0);
           LOG_EPOLL("fd: %d", fd);
           if (fd < 0) {
             std::cerr << "WARN: fd: " << fd << std::endl;
@@ -616,7 +621,7 @@ namespace genesis_n {
           struct epoll_event event;
           event.data.fd = fd;
           event.events = EPOLLIN;
-          ret = epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &event);
+          ret = epoll_ctl(fd_epoll, EPOLL_CTL_ADD, fd, &event);
           LOG_EPOLL("epoll_ctl(...): %d", ret);
           if (ret < 0) {
             std::cerr << "WARN: ret: " << ret << std::endl;
@@ -627,9 +632,7 @@ namespace genesis_n {
         }
 
         {
-          uint8_t buffer[1024];
-
-          int bytes_read = read(event->data.fd, buffer, sizeof(buffer));
+          int bytes_read = read(event->data.fd, buffer_tmp, sizeof(buffer_tmp));
           LOG_EPOLL("read: fd: %d, bytes_read: %d", event->data.fd, bytes_read);
           if (bytes_read == -1) {
             if (errno != EAGAIN) {
@@ -640,21 +643,47 @@ namespace genesis_n {
             LOG_EPOLL("bytes_read == 0");
             shutdown(event->data.fd, SHUT_RDWR);
             close(event->data.fd);
+            buffers.erase(event->data.fd);
           } else {
-            LOG_EPOLL("msg: ");
-            LOG_EPOLL("%.*s", bytes_read, buffer);
-            if (bytes_read < 1024) {
-              std::string response =
-                "HTTP/1.1 200 OK\n"
-                "Connection: close\n"
-                "\n"
-                "<h1>amyasnikov.pro: genesis</h1>\n";
+            auto& buffer = buffers[event->data.fd];
+            buffer.first.insert(buffer.first.end(), std::begin(buffer_tmp), std::begin(buffer_tmp) + bytes_read);
+
+            static const std::string GET = "GET ";
+            static const std::string NL = "\x0d\x0a\x0d\x0a";
+            static const std::string response =
+              "HTTP/1.1 200 OK\n"
+              "Connection: close\n"
+              "\n"
+              "<h1>amyasnikov.pro: genesis</h1>";
+
+            if (buffer.first.size() >= GET.size()
+                && std::string(buffer.first.begin(), buffer.first.begin() + GET.size()) != GET)
+            {
+              std::cerr << "WARN: invalid http method" << std::endl;
+              LOG_EPOLL("method: %s", std::string(buffer.first.begin(), buffer.first.begin() + GET.size()).c_str());
+              close(event->data.fd);
+              buffers.erase(event->data.fd);
+              continue;
+            }
+
+            auto it = std::search(buffer.first.begin(), buffer.first.end(), NL.begin(), NL.end());
+            if (it != buffer.first.end()) {
+              // Нашли GET
+              it += NL.size();
+              LOG_EPOLL("msg: %s", std::string(buffer.first.begin(), it).c_str());
+              buffer.first.erase(buffer.first.begin(), it);
+
+              buffer.second.insert(buffer.second.end(), response.begin(), response.end());
               int bytes_write = write(event->data.fd, response.c_str(), response.size());
+              buffer.second.erase(buffer.second.begin(), buffer.second.begin() + bytes_write);
               LOG_EPOLL("write response: %d", bytes_write);
+              if (!buffer.second.empty()) {
+                std::cerr << "WARN: buffer.second.size(): " << buffer.second.size() << std::endl;
+              }
+
               close(event->data.fd);
             }
           }
-
         }
       }
     }
