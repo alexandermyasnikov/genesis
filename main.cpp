@@ -189,6 +189,10 @@ namespace genesis_n {
     }
   };
 
+  struct http_parser_t {
+    ;
+  };
+
   struct stats_t {
     size_t   bots_alive;
 
@@ -693,14 +697,8 @@ namespace genesis_n {
         buffer_req.insert(buffer_req.end(), std::begin(buffer_tmp),
             std::begin(buffer_tmp) + bytes_read);
 
-        if (buffer_req.size() >= GET.size()
-            && std::string(buffer_req.begin(), buffer_req.begin() + GET.size()) != GET)
-        {
-          std::cerr << "WARN: invalid http method" << std::endl;
-          close(fd);
-          buffers.erase(fd);
-          return;
-        }
+        // auto tmp = http_parser_t::method();
+        // auto tmp = http_parser_t::params();
 
         auto it = std::search(buffer_req.begin(), buffer_req.end(), NL2.begin(), NL2.end());
         if (it != buffer_req.end()) {
@@ -709,20 +707,9 @@ namespace genesis_n {
           LOG_EPOLL("msg: '%s'", std::string(buffer_req.begin(), it).c_str());
           buffer_req.erase(buffer_req.begin(), it);
 
-          std::string response = R"JSON(
-            {"menu": {
-              "id": "file",
-              "value": "File",
-              "popup": {
-                "menuitem": [ 11, 12, 13, 14,
-                  {"value": "New", "onclick": "CreateNewDoc()"},
-                  {"value": "Open", "onclick": "OpenDoc()"},
-                  {"value": "Close", "onclick": "CloseDoc()"}
-                ]
-              }
-            }})JSON";
+          std::string response = "<h1>amyasnikov: genesis</h1>";
 
-          response = get_response(ct_json, response);
+          response = get_response(ct_html, response);
 
           buffer_resp.insert(buffer_resp.end(), response.begin(), response.end());
 
