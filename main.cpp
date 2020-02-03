@@ -490,9 +490,15 @@ namespace genesis_n {
     static const size_t  events_count = 16;
     int                  fd_listen;
     int                  fd_epoll;
-    struct epoll_event   events[events_count];
+    epoll_event          events[events_count];
     buffers_t            buffers;
     char                 buffer_tmp[1024];
+
+    inline static const std::string GET = "GET ";
+    inline static const std::string NL = "\r\n";
+    inline static const std::string NL2 = "\r\n\r\n";
+    inline static const std::string ct_html = "text/html; charset=UTF-8";
+    inline static const std::string ct_json = "application/json";
 
     void update_parameters() override {
       TRACE_TEST;
@@ -520,7 +526,7 @@ namespace genesis_n {
         exit(-1);
       }
 
-      struct in_addr ip_addr = {0};
+      in_addr ip_addr = {0};
       ret = inet_pton(AF_INET, utils_t::parameters.system_epoll_ip.c_str(), &ip_addr);
       LOG_EPOLL("inet_pton(...): %d", ret);
       if (ret < 0) {
@@ -528,13 +534,13 @@ namespace genesis_n {
         exit(-1);
       }
 
-      struct sockaddr_in addr;
+      sockaddr_in addr;
       memset((char *) &addr, 0, sizeof(addr));
       addr.sin_family      = AF_INET;
       addr.sin_addr.s_addr = ip_addr.s_addr;
       addr.sin_port        = htons((uint16_t) utils_t::parameters.system_epoll_port);
 
-      ret = bind(fd_listen, (struct sockaddr *) &addr, sizeof(addr));
+      ret = bind(fd_listen, (sockaddr *) &addr, sizeof(addr));
       LOG_EPOLL("bind(...): %d", ret);
       if (ret < 0) {
         std::cerr << "WARN: ret: " << ret << std::endl;
@@ -580,23 +586,23 @@ namespace genesis_n {
       int event_count = epoll_wait(fd_epoll, events, events_count, 0);
 
       for (int i = 0; i < event_count; i++) {
-        struct epoll_event* event = &events[i];
-        LOG_EPOLL("events 0x%x", event->events);
-        LOG_EPOLL("data.fd: %d", event->data.fd);
+        epoll_event& event = events[i];
+        LOG_EPOLL("events: 0x%x", event.events);
+        LOG_EPOLL("data.fd: %d", event.data.fd);
 
-        if ((event->events & EPOLLERR) ||
-            (event->events & EPOLLHUP) ||
-            (!(event->events & EPOLLIN)))
+        if ((event.events & EPOLLERR) ||
+            (event.events & EPOLLHUP) ||
+            (!(event.events & (EPOLLIN | EPOLLOUT))))
         {
           LOG_EPOLL("epoll error");
-          int ret = close(event->data.fd);
+          int ret = close(event.data.fd);
           if (ret < 0) {
             std::cerr << "WARN: ret: " << ret << std::endl;
           }
           continue;
         }
 
-        if (event->data.fd == fd_listen) {
+        if (event.data.fd == fd_listen) {
           LOG_EPOLL("new connection");
 
           int fd = accept(fd_listen , 0, 0);
@@ -618,7 +624,7 @@ namespace genesis_n {
             exit(-1);
           }
 
-          struct epoll_event event;
+          epoll_event event;
           event.data.fd = fd;
           event.events = EPOLLIN;
           ret = epoll_ctl(fd_epoll, EPOLL_CTL_ADD, fd, &event);
@@ -631,58 +637,119 @@ namespace genesis_n {
           continue;
         }
 
+        if (event.events & EPOLLIN) {
+          process_read(event.data.fd);
+        } else {
+          process_write(event.data.fd);
+        }
+
+      }
+    }
+
+    std::string get_response(const std::string ct, const std::string& body) {
+      std::stringstream ss;
+      ss << "HTTP/1.1 200 OK" << NL
+        << "Content-Type: " << ct << NL
+        << "Content-Length: " << body.size() << NL
+        << "Connection: keep-alive" << NL << NL
+        << body;
+
+      return ss.str();
+    }
+
+    void process_write(int fd) {
+      auto& buffer = buffers[fd];
+      auto& buffer_resp = buffer.second;
+
+      int bytes_write = std::min((int) sizeof(buffer_tmp),
+          (int) std::distance(buffer_resp.begin(), buffer_resp.end()));
+
+      std::copy(buffer_resp.begin(), buffer_resp.begin() + bytes_write, std::begin(buffer_tmp));
+
+      bytes_write = write(fd, buffer_tmp, bytes_write);
+      buffer_resp.erase(buffer_resp.begin(), buffer_resp.begin() + bytes_write);
+      LOG_EPOLL("write response: %d", bytes_write);
+      if (!buffer_resp.empty()) {
+        std::cerr << "WARN: buffer_resp.size(): " << buffer_resp.size() << std::endl;
+      }
+
+      if (buffer_resp.empty()) {
+        epoll_event event;
+        event.data.fd = fd;
+        event.events = EPOLLIN;
+        int ret = epoll_ctl(fd_epoll, EPOLL_CTL_MOD, fd, &event);
+        LOG_EPOLL("epoll_ctl(...): %d", ret);
+        if (ret < 0) {
+          std::cerr << "WARN: ret: " << ret << std::endl;
+          exit(-1);
+        }
+      }
+
+      // close(fd);
+    }
+
+    void process_read(int fd) {
+      int bytes_read = read(fd, buffer_tmp, sizeof(buffer_tmp));
+      LOG_EPOLL("read: fd: %d, bytes_read: %d", fd, bytes_read);
+      if (bytes_read == -1) {
+        if (errno != EAGAIN) {
+          LOG_EPOLL("errno: !EAGAIN");
+          close(fd);
+        }
+      } else if (bytes_read == 0) {
+        LOG_EPOLL("bytes_read == 0");
+        shutdown(fd, SHUT_RDWR);
+        close(fd);
+        buffers.erase(fd);
+      } else {
+        auto& buffer = buffers[fd];
+        auto& buffer_req = buffer.first;
+        auto& buffer_resp = buffer.second;
+        buffer_req.insert(buffer_req.end(), std::begin(buffer_tmp),
+            std::begin(buffer_tmp) + bytes_read);
+            // std::advance(std::begin(buffer_tmp), bytes_read));
+
+        if (buffer_req.size() >= GET.size()
+            && std::string(buffer_req.begin(), buffer_req.begin() + GET.size()) != GET)
         {
-          int bytes_read = read(event->data.fd, buffer_tmp, sizeof(buffer_tmp));
-          LOG_EPOLL("read: fd: %d, bytes_read: %d", event->data.fd, bytes_read);
-          if (bytes_read == -1) {
-            if (errno != EAGAIN) {
-              LOG_EPOLL("errno: !EAGAIN");
-              close(event->data.fd);
-            }
-          } else if (bytes_read == 0) {
-            LOG_EPOLL("bytes_read == 0");
-            shutdown(event->data.fd, SHUT_RDWR);
-            close(event->data.fd);
-            buffers.erase(event->data.fd);
-          } else {
-            auto& buffer = buffers[event->data.fd];
-            buffer.first.insert(buffer.first.end(), std::begin(buffer_tmp), std::begin(buffer_tmp) + bytes_read);
+          std::cerr << "WARN: invalid http method" << std::endl;
+          close(fd);
+          buffers.erase(fd);
+          return;
+        }
 
-            static const std::string GET = "GET ";
-            static const std::string NL = "\x0d\x0a\x0d\x0a";
-            static const std::string response =
-              "HTTP/1.1 200 OK\n"
-              "Connection: close\n"
-              "\n"
-              "<h1>amyasnikov.pro: genesis</h1>";
+        auto it = std::search(buffer_req.begin(), buffer_req.end(), NL2.begin(), NL2.end());
+        if (it != buffer_req.end()) {
+          // GET found
+          it += NL2.size();
+          LOG_EPOLL("msg: '%s'", std::string(buffer_req.begin(), it).c_str());
+          buffer_req.erase(buffer_req.begin(), it);
 
-            if (buffer.first.size() >= GET.size()
-                && std::string(buffer.first.begin(), buffer.first.begin() + GET.size()) != GET)
-            {
-              std::cerr << "WARN: invalid http method" << std::endl;
-              LOG_EPOLL("method: %s", std::string(buffer.first.begin(), buffer.first.begin() + GET.size()).c_str());
-              close(event->data.fd);
-              buffers.erase(event->data.fd);
-              continue;
-            }
-
-            auto it = std::search(buffer.first.begin(), buffer.first.end(), NL.begin(), NL.end());
-            if (it != buffer.first.end()) {
-              // Нашли GET
-              it += NL.size();
-              LOG_EPOLL("msg: %s", std::string(buffer.first.begin(), it).c_str());
-              buffer.first.erase(buffer.first.begin(), it);
-
-              buffer.second.insert(buffer.second.end(), response.begin(), response.end());
-              int bytes_write = write(event->data.fd, response.c_str(), response.size());
-              buffer.second.erase(buffer.second.begin(), buffer.second.begin() + bytes_write);
-              LOG_EPOLL("write response: %d", bytes_write);
-              if (!buffer.second.empty()) {
-                std::cerr << "WARN: buffer.second.size(): " << buffer.second.size() << std::endl;
+          std::string response = R"JSON(
+            {"menu": {
+              "id": "file",
+              "value": "File",
+              "popup": {
+                "menuitem": [ 11, 12, 13, 14,
+                  {"value": "New", "onclick": "CreateNewDoc()"},
+                  {"value": "Open", "onclick": "OpenDoc()"},
+                  {"value": "Close", "onclick": "CloseDoc()"}
+                ]
               }
+            }})JSON";
 
-              close(event->data.fd);
-            }
+          response = get_response(ct_json, response);
+
+          buffer_resp.insert(buffer_resp.end(), response.begin(), response.end());
+
+          epoll_event event;
+          event.data.fd = fd;
+          event.events = EPOLLIN | EPOLLOUT;
+          int ret = epoll_ctl(fd_epoll, EPOLL_CTL_MOD, fd, &event);
+          LOG_EPOLL("epoll_ctl(...): %d", ret);
+          if (ret < 0) {
+            std::cerr << "WARN: ret: " << ret << std::endl;
+            exit(-1);
           }
         }
       }
