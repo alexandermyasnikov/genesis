@@ -493,6 +493,7 @@ namespace genesis_n {
     epoll_event          events[events_count];
     buffers_t            buffers;
     char                 buffer_tmp[1024];
+    bool                 is_run;
 
     inline static const std::string GET = "GET ";
     inline static const std::string NL = "\r\n";
@@ -502,36 +503,28 @@ namespace genesis_n {
 
     void update_parameters() override {
       TRACE_TEST;
-      LOG_EPOLL("epoll starting ...");
+      is_run = false;
 
-      fd_epoll = epoll_create1(0);
-      LOG_EPOLL("fd_epoll: %d", fd_epoll);
-      if (fd_epoll < 0) {
+      if (fd_epoll = epoll_create1(0); fd_epoll < 0) {
         std::cerr << "WARN: fd_epoll: " << fd_epoll << std::endl;
-        exit(-1);
+        close_all();
       }
 
-      fd_listen = socket(AF_INET, SOCK_STREAM, 0);
-      LOG_EPOLL("fd_listen: %d", fd_listen);
-      if (fd_listen < 0) {
+      if (fd_listen = socket(AF_INET, SOCK_STREAM, 0); fd_listen < 0) {
         std::cerr << "WARN: fd_listen: " << fd_listen << std::endl;
-        exit(-1);
+        close_all();
       }
 
       int on = 1;
-      int ret = setsockopt(fd_listen, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
-      LOG_EPOLL("setsockopt(...): %d", ret);
-      if (ret < 0) {
-        std::cerr << "WARN: ret: " << ret << std::endl;
-        exit(-1);
+      if (int ret = setsockopt(fd_listen, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)); ret < 0) {
+        std::cerr << "WARN: setsockopt(...): " << ret << std::endl;
+        close_all();
       }
 
       in_addr ip_addr = {0};
-      ret = inet_pton(AF_INET, utils_t::parameters.system_epoll_ip.c_str(), &ip_addr);
-      LOG_EPOLL("inet_pton(...): %d", ret);
-      if (ret < 0) {
-        std::cerr << "WARN: ret: " << ret << std::endl;
-        exit(-1);
+      if (int ret = inet_pton(AF_INET, utils_t::parameters.system_epoll_ip.c_str(), &ip_addr); ret < 0) {
+        std::cerr << "WARN: inet_pton(...): " << ret << std::endl;
+        close_all();
       }
 
       sockaddr_in addr;
@@ -540,48 +533,34 @@ namespace genesis_n {
       addr.sin_addr.s_addr = ip_addr.s_addr;
       addr.sin_port        = htons((uint16_t) utils_t::parameters.system_epoll_port);
 
-      ret = bind(fd_listen, (sockaddr *) &addr, sizeof(addr));
-      LOG_EPOLL("bind(...): %d", ret);
-      if (ret < 0) {
-        std::cerr << "WARN: ret: " << ret << std::endl;
-        exit(-1);
+      if (int ret = bind(fd_listen, (sockaddr *) &addr, sizeof(addr)); ret < 0) {
+        std::cerr << "WARN: bind(...): " << ret << std::endl;
+        close_all();
       }
 
-      int flags = fcntl(fd_listen, F_GETFL, 0);
-      if (flags == -1) {
-        flags = 0;
+      if (set_nonblock(fd_listen) < 0) {
+        close_all();
       }
 
-      ret = fcntl(fd_listen, F_SETFL, flags | O_NONBLOCK);
-      LOG_EPOLL("fcntl(...): %d", ret);
-      if (ret < 0) {
-        std::cerr << "WARN: ret: " << ret << std::endl;
-        exit(-1);
+      if (int ret = listen(fd_listen, SOMAXCONN); ret < 0) {
+        std::cerr << "WARN: listen(...): " << ret << std::endl;
+        close_all();
       }
 
-      ret = listen(fd_listen, SOMAXCONN);
-      LOG_EPOLL("listen(...): %d", ret);
-      if (ret < 0) {
-        std::cerr << "WARN: ret: " << ret << std::endl;
-        exit(-1);
+      if (set_epoll_ctl(fd_listen, EPOLLIN, EPOLL_CTL_ADD) < 0) {
+        close_all();
       }
 
-      struct epoll_event event;
-      event.data.fd = fd_listen;
-      event.events = EPOLLIN;
-
-      ret = epoll_ctl(fd_epoll, EPOLL_CTL_ADD, fd_listen, &event);
-      LOG_EPOLL("epoll_ctl(...): %d", ret);
-      if (ret < 0) {
-        std::cerr << "WARN: ret: " << ret << std::endl;
-        exit(-1);
-      }
-
-      LOG_EPOLL("epoll started");
+      is_run = true;
     }
 
     void update(world_t& world) override {
       TRACE_TEST;
+
+      if (!is_run) {
+        update_parameters();
+        return;
+      }
 
       int event_count = epoll_wait(fd_epoll, events, events_count, 0);
 
@@ -595,10 +574,7 @@ namespace genesis_n {
             (!(event.events & (EPOLLIN | EPOLLOUT))))
         {
           LOG_EPOLL("epoll error");
-          int ret = close(event.data.fd);
-          if (ret < 0) {
-            std::cerr << "WARN: ret: " << ret << std::endl;
-          }
+          close(event.data.fd);
           continue;
         }
 
@@ -609,29 +585,15 @@ namespace genesis_n {
           LOG_EPOLL("fd: %d", fd);
           if (fd < 0) {
             std::cerr << "WARN: fd: " << fd << std::endl;
-            exit(-1);
+            close_all();
           }
 
-          int flags = fcntl(fd, F_GETFL, 0);
-          if (flags == -1) {
-            flags = 0;
+          if (set_nonblock(fd) < 0) {
+            close_all();
           }
 
-          int ret = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-          LOG_EPOLL("fcntl(...): %d", ret);
-          if (ret < 0) {
-            std::cerr << "WARN: ret: " << ret << std::endl;
-            exit(-1);
-          }
-
-          epoll_event event;
-          event.data.fd = fd;
-          event.events = EPOLLIN;
-          ret = epoll_ctl(fd_epoll, EPOLL_CTL_ADD, fd, &event);
-          LOG_EPOLL("epoll_ctl(...): %d", ret);
-          if (ret < 0) {
-            std::cerr << "WARN: ret: " << ret << std::endl;
-            exit(-1);
+          if (set_epoll_ctl(fd, EPOLLIN, EPOLL_CTL_ADD) < 0) {
+            close_all();
           }
 
           continue;
@@ -657,6 +619,39 @@ namespace genesis_n {
       return ss.str();
     }
 
+    void close_all() {
+      std::cerr << "WARN: epoll: close_all()" << std::endl;
+      for (auto& kv : buffers) {
+        close(kv.first);
+      }
+      buffers.clear();
+      is_run = false;
+    }
+
+    int set_nonblock(int fd) {
+      int flags = fcntl(fd, F_GETFL, 0);
+      if (flags < 0) {
+        flags = 0;
+      }
+
+      int ret = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+      if (ret < 0) {
+        std::cerr << "WARN: fcntl(...): " << ret << std::endl;
+      }
+      return ret;
+    }
+
+    int set_epoll_ctl(int fd, int events, int op) {
+      epoll_event event;
+      event.data.fd = fd;
+      event.events = events;
+      int ret = epoll_ctl(fd_epoll, op, fd, &event);
+      if (ret < 0) {
+        std::cerr << "WARN: epoll_ctl(...): " << ret << std::endl;
+      }
+      return ret;
+    }
+
     void process_write(int fd) {
       auto& buffer = buffers[fd];
       auto& buffer_resp = buffer.second;
@@ -668,24 +663,13 @@ namespace genesis_n {
 
       bytes_write = write(fd, buffer_tmp, bytes_write);
       buffer_resp.erase(buffer_resp.begin(), buffer_resp.begin() + bytes_write);
-      LOG_EPOLL("write response: %d", bytes_write);
-      if (!buffer_resp.empty()) {
-        std::cerr << "WARN: buffer_resp.size(): " << buffer_resp.size() << std::endl;
-      }
+      LOG_EPOLL("write: %d", bytes_write);
 
       if (buffer_resp.empty()) {
-        epoll_event event;
-        event.data.fd = fd;
-        event.events = EPOLLIN;
-        int ret = epoll_ctl(fd_epoll, EPOLL_CTL_MOD, fd, &event);
-        LOG_EPOLL("epoll_ctl(...): %d", ret);
-        if (ret < 0) {
-          std::cerr << "WARN: ret: " << ret << std::endl;
-          exit(-1);
+        if (set_epoll_ctl(fd, EPOLLIN, EPOLL_CTL_MOD) < 0) {
+          close_all();
         }
       }
-
-      // close(fd);
     }
 
     void process_read(int fd) {
@@ -705,9 +689,9 @@ namespace genesis_n {
         auto& buffer = buffers[fd];
         auto& buffer_req = buffer.first;
         auto& buffer_resp = buffer.second;
+
         buffer_req.insert(buffer_req.end(), std::begin(buffer_tmp),
             std::begin(buffer_tmp) + bytes_read);
-            // std::advance(std::begin(buffer_tmp), bytes_read));
 
         if (buffer_req.size() >= GET.size()
             && std::string(buffer_req.begin(), buffer_req.begin() + GET.size()) != GET)
@@ -742,14 +726,8 @@ namespace genesis_n {
 
           buffer_resp.insert(buffer_resp.end(), response.begin(), response.end());
 
-          epoll_event event;
-          event.data.fd = fd;
-          event.events = EPOLLIN | EPOLLOUT;
-          int ret = epoll_ctl(fd_epoll, EPOLL_CTL_MOD, fd, &event);
-          LOG_EPOLL("epoll_ctl(...): %d", ret);
-          if (ret < 0) {
-            std::cerr << "WARN: ret: " << ret << std::endl;
-            exit(-1);
+          if (set_epoll_ctl(fd, EPOLLIN | EPOLLOUT, EPOLL_CTL_MOD) < 0) {
+            close_all();
           }
         }
       }
