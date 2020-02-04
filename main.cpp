@@ -45,31 +45,17 @@ namespace genesis_n {
   using system_sptr_t = std::shared_ptr<system_t>;
 
   struct parameters_t {
-    size_t   position_n;
-    size_t   position_max;
-
-    size_t   bot_code_size;
-    size_t   bot_regs_size;
-    size_t   bot_interrupts_size;
-    size_t   bot_energy_max;
-    size_t   bot_energy_daily;
-
-    size_t   system_min_bot_count;
-    size_t   system_epoll_port;
-    std::string   system_epoll_ip;
-
-    parameters_t() :
-      position_n(10),
-      position_max(100),
-      bot_code_size(64),
-      bot_regs_size(32),
-      bot_interrupts_size(8),
-      bot_energy_max(100),
-      bot_energy_daily(1),
-      system_min_bot_count(position_max / 10),
-      system_epoll_port(8282),
-      system_epoll_ip("127.0.0.1")
-    { }
+    size_t   position_n               = 10;
+    size_t   position_max             = 100;
+    size_t   bot_code_size            = 64;
+    size_t   bot_regs_size            = 32;
+    size_t   bot_interrupts_size      = 8;
+    size_t   bot_energy_max           = 100;
+    size_t   bot_energy_daily         = 1;
+    size_t   system_min_bot_count     = position_max / 10;
+    size_t   system_epoll_port        = 8282;
+    std::string   system_epoll_ip     = "127.0.0.1";
+    std::string   world_file          = "world.json";
 
     void load(nlohmann::json& json) {
       TRACE_TEST;
@@ -86,6 +72,7 @@ namespace genesis_n {
       JSON_LOAD(json, system_min_bot_count);
       JSON_LOAD(json, system_epoll_port);
       JSON_LOAD(json, system_epoll_ip);
+      JSON_LOAD(json, world_file);
 
       position_max = (position_max / position_n) * position_n;   // correct, position_max % position_n == 0
     }
@@ -105,6 +92,7 @@ namespace genesis_n {
       JSON_SAVE(json, system_min_bot_count);
       JSON_SAVE(json, system_epoll_port);
       JSON_SAVE(json, system_epoll_ip);
+      JSON_SAVE(json, world_file);
     }
   };
 
@@ -124,14 +112,14 @@ namespace genesis_n {
       return dis(gen);
     }
 
-    static void update_parameters(const std::string& name, const std::string& name_tmp) {
+    static void update_parameters(const std::string& name) {
       TRACE_TEST;
       nlohmann::json json;
-      utils_t::load(json, name, name_tmp);
+      utils_t::load(json, name);
       parameters.load(json);
       json = {};
       parameters.save(json);
-      utils_t::save(json, name, name_tmp);
+      utils_t::save(json, name);
     }
 
     static void rename(const std::string& name_old, const std::string& name_new) {
@@ -152,7 +140,7 @@ namespace genesis_n {
       }
     }
 
-    static bool load(nlohmann::json& json, const std::string& name, const std::string& name_tmp) {
+    static bool load(nlohmann::json& json, const std::string& name) {
       TRACE_TEST;
       try {
         std::ifstream file(name);
@@ -162,6 +150,7 @@ namespace genesis_n {
         std::cerr << "WARN: " << e.what() << std::endl;
       }
 
+      std::string name_tmp = name + ".tmp";
       try {
         std::ifstream file(name_tmp);
         file >> json;
@@ -173,8 +162,9 @@ namespace genesis_n {
       return false;
     }
 
-    static bool save(const nlohmann::json& json, const std::string& name, const std::string& name_tmp) {
+    static bool save(const nlohmann::json& json, const std::string& name) {
       TRACE_TEST;
+      std::string name_tmp = name + ".tmp";
       try {
         std::ofstream file(name_tmp);
         file << std::setw(2) << json;
@@ -281,10 +271,10 @@ namespace genesis_n {
 
     void update_parameters();
 
-    void load(const std::string& name, const std::string& name_tmp) {
+    void load() {
       TRACE_TEST;
       nlohmann::json json;
-      utils_t::load(json, name, name_tmp);
+      utils_t::load(json, utils_t::parameters.world_file);
 
       bots.resize(utils_t::parameters.position_max);
 
@@ -300,7 +290,7 @@ namespace genesis_n {
       }
     }
 
-    void save(const std::string& name, const std::string& name_tmp) {
+    void save() {
       TRACE_TEST;
       nlohmann::json json;
 
@@ -314,7 +304,7 @@ namespace genesis_n {
         }
       }
 
-      utils_t::save(json, name, name_tmp);
+      utils_t::save(json, utils_t::parameters.world_file);
     }
   };
 
@@ -750,29 +740,25 @@ namespace genesis_n {
 int main(int argc, char* argv[]) {
   TRACE_TEST;
 
-  std::string parameters_fname = "parameters.json";
-  std::string world_fname = "world.json";
-  std::string tmp_fname = "tmp.json";
+  std::string parameters_file = "parameters.json";
 
-  if (argc > 3) {
-    parameters_fname   = argv[1];
-    world_fname        = argv[2];
-    tmp_fname          = argv[3];
+  if (argc > 1) {
+    parameters_file = argv[1];
   }
 
   using namespace genesis_n;
 
-  utils_t::update_parameters(parameters_fname, tmp_fname);
+  utils_t::update_parameters(parameters_file);
 
   world_t world;
-  world.load(world_fname, tmp_fname);
+  world.load();
 
   world.update_parameters();
 
   for (size_t i{}; true; ++i) {
     world.update();
     if (i % 100000 == 0) {
-      world.save(world_fname, tmp_fname);
+      world.save();
     }
   }
 
