@@ -1,0 +1,177 @@
+<!doctype html>
+<html>
+  <head>
+    <title>rectExample</title>
+    <meta charset='utf-8' />
+    <style>
+      #canvas {
+        // width:100%;
+        // height:100%;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id='canvas'></canvas>
+    <script>
+      {
+        var width = 600;
+        var height = 600;
+        var url_parameters = "http://0.0.0.0:8000/parameters.json";
+        var url_world = "http://0.0.0.0:8000/world.json";
+        var parameters = null;
+        var sleep = 1000;
+        var x0 = 0;
+        var y0 = 0;
+        var w = 0;
+        var h = 0;
+        var scale = 0;
+        var world;
+
+        var getJSON = function(url, callback) {
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', url, true);
+          xhr.responseType = 'json';
+          xhr.onload = function() {
+            var status = xhr.status;
+            if (status === 200) {
+              callback(null, xhr.response);
+            } else {
+              callback(status, xhr.response);
+            }
+          };
+          xhr.send();
+        };
+
+        function update() {
+          getJSON(url_parameters,
+            function(err, data) {
+              if (err !== null) {
+                console.log('error: ' + err);
+              } else {
+                update_parameters(data);
+              }
+            });
+          getJSON(url_world,
+            function(err, data) {
+              if (err !== null) {
+                console.log('error: ' + err);
+              } else {
+                draw_world(data);
+              }
+            });
+        }
+
+        function update_parameters(data) {
+          if (!parameters || parameters.position_n != data.position_n
+            || parameters.position_max != data.position_max)
+          {
+            w = data.position_n;
+            h = data.position_max / data.position_n;
+            x0 = 0;
+            y0 = 0;
+          }
+
+          parameters = data;
+        }
+
+        function draw_world(data) {
+          world = data
+
+          w = Math.min(w, parameters.position_n);
+          h = Math.min(h, parameters.position_max / parameters.position_n);
+          x0 = Math.max(x0, 0);
+          y0 = Math.max(y0, 0);
+          x0 = Math.min(x0, parameters.position_n - w);
+          y0 = Math.min(y0, (parameters.position_max / parameters.position_n) - h);
+
+          scale_n = w / width;
+          scale_m = h / height;
+          scale = Math.max(scale_n, scale_m);
+          scale = 1 / scale;
+
+          ctx.resetTransform();
+          ctx.fillStyle = "rgba(240, 240, 240, 1)";
+          ctx.fillRect(0, 0, width, height);
+          ctx.scale(scale, scale);
+          ctx.translate(-x0, -y0);
+
+          for (const bot of world.bots) {
+            let x = Math.floor(bot.position % parameters.position_n);
+            let y = Math.floor(bot.position / parameters.position_n);
+            let r = bot.code[0];
+            let g = bot.code[1];
+            let b = bot.code[2];
+
+            if (x >= x0 - 1
+              && x <= x0 + h + 1
+              && y >= y0 - 1
+              && y <= y + h + 1)
+            {
+              ctx.fillStyle = "rgba("+r+","+g+","+b+", 0.8)";
+              ctx.beginPath();
+              ctx.arc(x + 0.5, y + 0.5, 0.5, 0, 2 * Math.PI);
+              ctx.fill()
+            }
+          }
+        }
+
+        var canvas = document.getElementById("canvas");
+        var ctx = canvas.getContext('2d');
+        canvas.width  = width;
+        canvas.height = height;
+
+        canvas.addEventListener('mousemove', e => {
+          var rect = canvas.getBoundingClientRect();
+          var x = e.clientX - rect.left;
+          var y = e.clientY - rect.top;
+          x = Math.floor(x0 + x / scale);
+          y = Math.floor(y0 + y / scale);
+          var ind = y * parameters.position_n + x;
+          for (const bot of world.bots) {
+            if (bot.position == ind) {
+              console.log(bot);
+            }
+          }
+        });
+
+        window.addEventListener('keydown', e => {
+          if (e.key == "ArrowUp") {
+            y0 -= 0.1 * h;
+            draw_world(world);
+          } else if (e.key == "ArrowDown") {
+            y0 += 0.1 * h;
+            draw_world(world);
+          } else if (e.key == "ArrowLeft") {
+            x0 -= 0.1 * w;
+            draw_world(world);
+          } else if (e.key == "ArrowRight") {
+            x0 += 0.1 * w;
+            draw_world(world);
+          } else if (e.key == "+") {
+            const dx = 0.2 * w;
+            const dy = 0.2 * h;
+            x0 += dx / 2;
+            y0 += dy / 2;
+            w -= dx;
+            h -= dy;
+            draw_world(world);
+          } else if (e.key == "-") {
+            const dx = 0.2 * w;
+            const dy = 0.2 * h;
+            x0 -= dx / 2;
+            y0 -= dy / 2;
+            w += dx;
+            h += dy;
+            draw_world(world);
+          }
+        });
+
+        setInterval(update, sleep);
+      }
+    </script>
+  </body>
+</html>
