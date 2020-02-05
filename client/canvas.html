@@ -23,13 +23,14 @@
         var url_parameters = "http://0.0.0.0:8000/parameters.json";
         var url_world = "http://0.0.0.0:8000/world.json";
         var parameters = null;
-        var sleep = 1000;
+        var sleep = 100;
         var x0 = 0;
         var y0 = 0;
         var w = 0;
         var h = 0;
         var scale = 0;
         var world;
+        var bot_ind = -1;
 
         var getJSON = function(url, callback) {
           var xhr = new XMLHttpRequest();
@@ -88,10 +89,9 @@
           x0 = Math.min(x0, parameters.position_n - w);
           y0 = Math.min(y0, (parameters.position_max / parameters.position_n) - h);
 
-          scale_n = w / width;
-          scale_m = h / height;
-          scale = Math.max(scale_n, scale_m);
-          scale = 1 / scale;
+          scale_n = width / w;
+          scale_m = height / h;
+          scale = Math.min(scale_n, scale_m);
 
           ctx.resetTransform();
           ctx.fillStyle = "rgba(240, 240, 240, 1)";
@@ -116,6 +116,24 @@
               ctx.arc(x + 0.5, y + 0.5, 0.5, 0, 2 * Math.PI);
               ctx.fill()
             }
+
+            if (bot.position == bot_ind) {
+              ctx.save()
+              ctx.resetTransform();
+              ctx.font = "20px Arial";
+              ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+              text = ["(" + x + ", " + y + ")",
+                "age:        " + bot.age,
+                "name:     " + bot.name,
+                "energy:   " + bot.energy,
+                "mineral:  " + bot.mineral,
+                "sunlight: " + bot.sunlight,
+              ];
+              for (const i in text) {
+                ctx.fillText(text[i], 10, 20 + 20 * i);
+              }
+              ctx.restore();
+            }
           }
         }
 
@@ -131,10 +149,9 @@
           x = Math.floor(x0 + x / scale);
           y = Math.floor(y0 + y / scale);
           var ind = y * parameters.position_n + x;
-          for (const bot of world.bots) {
-            if (bot.position == ind) {
-              console.log(bot);
-            }
+          if (bot_ind != ind) {
+            bot_ind = ind;
+            draw_world(world);
           }
         });
 
