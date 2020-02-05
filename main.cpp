@@ -35,7 +35,6 @@ struct logger_indent_test_t   : logger_indent_t<logger_indent_test_t> { };
 
 
 
-
 namespace genesis_n {
   struct world_t;
   struct system_t;
@@ -56,6 +55,10 @@ namespace genesis_n {
     size_t   system_epoll_port        = 8282;
     std::string   system_epoll_ip     = "127.0.0.1";
     std::string   world_file          = "world.json";
+    std::string   parameters_file     = "parameters.json";
+    size_t   time_ms                  = 0;
+    size_t   interval_save_world_ms   = 60 * 1000;
+    size_t   interval_load_parameters_ms   = 60 * 1000;
 
     void load(nlohmann::json& json) {
       TRACE_TEST;
@@ -73,8 +76,13 @@ namespace genesis_n {
       JSON_LOAD(json, system_epoll_port);
       JSON_LOAD(json, system_epoll_ip);
       JSON_LOAD(json, world_file);
+      JSON_LOAD(json, parameters_file);
+      // JSON_LOAD(json, time_ms);
+      JSON_LOAD(json, interval_save_world_ms);
+      JSON_LOAD(json, interval_load_parameters_ms);
 
-      position_max = (position_max / position_n) * position_n;   // correct, position_max % position_n == 0
+      // correct: position_max % position_n == 0
+      position_max = (position_max / position_n) * position_n;
     }
 
     void save(nlohmann::json& json) {
@@ -93,6 +101,10 @@ namespace genesis_n {
       JSON_SAVE(json, system_epoll_port);
       JSON_SAVE(json, system_epoll_ip);
       JSON_SAVE(json, world_file);
+      JSON_SAVE(json, parameters_file);
+      JSON_SAVE(json, time_ms);
+      JSON_SAVE(json, interval_save_world_ms);
+      JSON_SAVE(json, interval_load_parameters_ms);
     }
   };
 
@@ -167,7 +179,7 @@ namespace genesis_n {
       std::string name_tmp = name + ".tmp";
       try {
         std::ofstream file(name_tmp);
-        file << std::setw(2) << json;
+        file << std::setw(0) << json;
 
         utils_t::rename(name_tmp, name);
         utils_t::remove(name_tmp);
@@ -264,6 +276,8 @@ namespace genesis_n {
     stats_t                      stats;
     std::vector<bot_sptr_t>      bots;
     std::vector<system_sptr_t>   systems;
+    size_t                       last_time_save_words_ms = 0;
+    size_t                       last_time_load_parameters_ms = 0;
 
     world_t();
 
@@ -288,6 +302,8 @@ namespace genesis_n {
           }
         }
       }
+
+      last_time_save_words_ms = utils_t::parameters.time_ms;
     }
 
     void save() {
@@ -711,9 +727,24 @@ namespace genesis_n {
     }
   };
 
+  struct system_time_t : system_t {
+    void update_parameters() override {
+      size_t time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::system_clock::now().time_since_epoch()).count();
+      utils_t::parameters.time_ms = time_ms;
+    }
+
+    void update(world_t& world) override {
+      size_t time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::system_clock::now().time_since_epoch()).count();
+      utils_t::parameters.time_ms = time_ms;
+    }
+  };
+
 
 
   world_t::world_t() {
+    systems.push_back(std::make_shared<system_time_t>());
     systems.push_back(std::make_shared<system_bot_stats_t>());
     systems.push_back(std::make_shared<system_bot_generator_t>());
     systems.push_back(std::make_shared<system_bot_updater_t>());
@@ -725,7 +756,22 @@ namespace genesis_n {
     for (auto& system : systems) {
       system->update(*this);
     }
+
+    if (utils_t::parameters.interval_save_world_ms
+        + last_time_save_words_ms < utils_t::parameters.time_ms)
+    {
+      save();
+      last_time_save_words_ms = utils_t::parameters.time_ms;
+    }
+
+    if (utils_t::parameters.interval_load_parameters_ms
+        + last_time_load_parameters_ms < utils_t::parameters.time_ms)
+    {
+      utils_t::update_parameters(utils_t::parameters.parameters_file);
+      last_time_load_parameters_ms = utils_t::parameters.time_ms;
+    }
   }
+
 
   void world_t::update_parameters() {
     TRACE_TEST;
@@ -755,11 +801,8 @@ int main(int argc, char* argv[]) {
 
   world.update_parameters();
 
-  for (size_t i{}; true; ++i) {
+  while (true) {
     world.update();
-    if (i % 100000 == 0) {
-      world.save();
-    }
   }
 
 
