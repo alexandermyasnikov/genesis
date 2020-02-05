@@ -100,6 +100,7 @@
           ctx.scale(scale, scale);
           ctx.translate(-x0, -y0);
 
+          var bot_info = null;
           for (const bot of world.bots) {
             let x = Math.floor(bot.position % parameters.position_n);
             let y = Math.floor(bot.position / parameters.position_n);
@@ -119,22 +120,26 @@
             }
 
             if (bot.position == bot_ind) {
-              ctx.save()
-              ctx.resetTransform();
-              ctx.font = "20px Arial";
-              ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-              text = ["(" + x + ", " + y + ")",
-                "age:        " + bot.age,
-                "name:     " + bot.name,
-                "energy:   " + bot.energy,
-                "mineral:  " + bot.mineral,
-                "sunlight: " + bot.sunlight,
-              ];
-              for (const i in text) {
-                ctx.fillText(text[i], 10, 20 + 20 * i);
-              }
-              ctx.restore();
+              bot_info = bot;
             }
+          }
+
+          if (bot_info) {
+            ctx.save()
+            ctx.resetTransform();
+            ctx.font = "20px Arial";
+            ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+            text = [
+              "age:        " + bot_info.age,
+              "name:     " + bot_info.name,
+              "energy:   " + bot_info.energy,
+              "mineral:  " + bot_info.mineral,
+              "sunlight: " + bot_info.sunlight,
+            ];
+            for (const i in text) {
+              ctx.fillText(text[i], 10, 20 + 20 * i);
+            }
+            ctx.restore();
           }
         }
 
