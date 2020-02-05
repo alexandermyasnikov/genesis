@@ -179,7 +179,7 @@ namespace genesis_n {
       std::string name_tmp = name + ".tmp";
       try {
         std::ofstream file(name_tmp);
-        file << std::setw(0) << json;
+        file << std::setw(2) << json;
 
         utils_t::rename(name_tmp, name);
         utils_t::remove(name_tmp);
@@ -213,6 +213,8 @@ namespace genesis_n {
     size_t                 energy;
     size_t                 energy_daily;
     size_t                 position;
+    size_t                 age;
+    std::string            name;
 
     void update_parameters() {
       TRACE_TEST;
@@ -230,6 +232,8 @@ namespace genesis_n {
       energy         = utils_t::parameters.bot_energy_max;
       energy_daily   = utils_t::parameters.bot_energy_daily;
       position       = utils_t::rand_u64() % (utils_t::parameters.position_max);
+      age            = 0;
+      name           = "r" + std::to_string(utils_t::rand_u64());
     }
 
     bool load(nlohmann::json& json) {
@@ -246,6 +250,8 @@ namespace genesis_n {
       JSON_LOAD(json, energy);
       JSON_LOAD(json, energy_daily);
       JSON_LOAD(json, position);
+      JSON_LOAD(json, age);
+      JSON_LOAD(json, name);
 
       code.resize(utils_t::parameters.bot_code_size);
       regs.resize(utils_t::parameters.bot_regs_size);
@@ -269,6 +275,8 @@ namespace genesis_n {
       JSON_SAVE(json, energy);
       JSON_SAVE(json, energy_daily);
       JSON_SAVE(json, position);
+      JSON_SAVE(json, age);
+      JSON_SAVE(json, name);
     }
   };
 
@@ -490,6 +498,7 @@ namespace genesis_n {
             break;
           }
         }
+        bot->age++;
       }
     }
   };
