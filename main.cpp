@@ -226,15 +226,15 @@ namespace genesis_n {
       }
       code.resize(utils_t::parameters.bot_code_size);
 
-      while (regs.size() < utils_t::parameters.bot_code_size) {
+      while (regs.size() < utils_t::parameters.bot_regs_size) {
         regs.push_back(utils_t::rand_u64() % 0xFF);
       }
-      regs.resize(utils_t::parameters.bot_code_size);
+      regs.resize(utils_t::parameters.bot_regs_size);
 
-      while (interrupts.size() < utils_t::parameters.bot_code_size) {
+      while (interrupts.size() < utils_t::parameters.bot_interrupts_size) {
         interrupts.push_back(utils_t::rand_u64() % 0xFF);
       }
-      interrupts.resize(utils_t::parameters.bot_code_size);
+      interrupts.resize(utils_t::parameters.bot_interrupts_size);
 
       mineral        = std::min(mineral, utils_t::parameters.bot_energy_max);
       sunlight       = std::min(mineral, utils_t::parameters.bot_energy_max);
@@ -304,18 +304,17 @@ namespace genesis_n {
       nlohmann::json json;
       utils_t::load(json, utils_t::parameters.world_file);
 
-      bots.resize(utils_t::parameters.position_max);
-
       auto& bots_json = json["bots"];
       if (bots_json.is_array()) {
         for (size_t i{}; i < bots_json.size(); ++i) {
           bot_t bot;
-          bot.update_parameters();
           if (bot.load(bots_json[i]) && bot.position < bots.size()) {
             bots[bot.position] = std::make_shared<bot_t>(bot);
           }
         }
       }
+
+      update_parameters();
     }
 
     void save() {
@@ -360,9 +359,8 @@ namespace genesis_n {
       if (world.stats.bots_alive < utils_t::parameters.system_min_bot_count) {
         bot_t bot_new;
         bot_new.update_parameters();
-        auto& bot = world.bots[bot_new.position];
-        if (!world.bots[bot_new.position]) {
-          bot = std::make_shared<bot_t>(bot_new);
+        if (bot_new.position < world.bots.size() && !world.bots[bot_new.position]) {
+          world.bots[bot_new.position] = std::make_shared<bot_t>(bot_new);
         }
       }
     }
@@ -377,15 +375,17 @@ namespace genesis_n {
           continue;
 
         LOG_TEST("");
-        LOG_TEST("bot:      %p", bot.get());
-        LOG_TEST("mineral:  %zd", bot->mineral);
-        LOG_TEST("sunlight: %zd", bot->sunlight);
-        LOG_TEST("energy:   %zd", bot->energy);
-        LOG_TEST("position: %zd", bot->position);
-        LOG_TEST("rip:      %zd", bot->rip);
+        LOG_TEST("bot:          %p", bot.get());
+        LOG_TEST("mineral:      %zd", bot->mineral);
+        LOG_TEST("sunlight:     %zd", bot->sunlight);
+        LOG_TEST("energy:       %zd", bot->energy);
+        LOG_TEST("position:     %zd", bot->position);
+        LOG_TEST("rip:          %zd", bot->rip);
+        LOG_TEST("age:          %zd", bot->age);
+        LOG_TEST("energy_daily: %zd", bot->energy_daily);
 
         // TODO for (x : bot->energy_daily)
-        if (bot->energy < bot->energy_daily) {
+        if (!bot->energy || bot->energy < bot->energy_daily) {
           bot.reset();
           LOG_TEST("DEAD");
           continue;
@@ -788,8 +788,7 @@ namespace genesis_n {
       std::this_thread::sleep_for(std::chrono::milliseconds(dt));
       time_update_world_ms = time_update_world_ms
         + utils_t::parameters.interval_update_world_ms;
-    }
-    else {
+    } else {
       time_update_world_ms = utils_t::parameters.time_ms
         + utils_t::parameters.interval_update_world_ms;
     }
@@ -800,6 +799,11 @@ namespace genesis_n {
     TRACE_TEST;
     for (auto& system : systems) {
       system->update_parameters();
+    }
+    bots.resize(utils_t::parameters.position_max);
+    for (auto& bot : bots) {
+      if (bot)
+        bot->update_parameters();
     }
   }
 }
