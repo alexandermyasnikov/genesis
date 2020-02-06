@@ -205,35 +205,38 @@ namespace genesis_n {
 
   struct bot_t {
     std::vector<uint8_t>   code;
-    std::vector<uint8_t>   regs;   // TODO uint32_t
+    std::vector<uint8_t>   regs;            // TODO uint32_t
     std::vector<uint8_t>   interrupts;
-    size_t                 rip;
-    size_t                 mineral;
-    size_t                 sunlight;
-    size_t                 energy;
-    size_t                 energy_daily;
-    size_t                 position;
-    size_t                 age;
-    std::string            name;
+    size_t                 rip              = 0;
+    size_t                 mineral          = utils_t::parameters.bot_energy_max;
+    size_t                 sunlight         = utils_t::parameters.bot_energy_max;
+    size_t                 energy           = utils_t::parameters.bot_energy_max;
+    size_t                 energy_daily     = utils_t::parameters.bot_energy_daily;
+    size_t                 position         = utils_t::rand_u64() % (utils_t::parameters.position_max);
+    size_t                 age              = 0;
+    std::string            name             = "r" + std::to_string(utils_t::rand_u64());
 
     void update_parameters() {
       TRACE_TEST;
+      while (code.size() < utils_t::parameters.bot_code_size) {
+        code.push_back(utils_t::rand_u64() % 0xFF);
+      }
       code.resize(utils_t::parameters.bot_code_size);
-      regs.resize(utils_t::parameters.bot_regs_size);
-      interrupts.resize(utils_t::parameters.bot_interrupts_size);
 
-      std::for_each(code.begin(), code.end(), [](auto& b) { b = utils_t::rand_u64() % 0xFF; });
-      std::for_each(regs.begin(), regs.end(), [](auto& b) { b = utils_t::rand_u64() % 0xFF; });
-      std::for_each(interrupts.begin(), interrupts.end(), [](auto& b) { b = utils_t::rand_u64() % 0xFF; });
+      while (regs.size() < utils_t::parameters.bot_code_size) {
+        regs.push_back(utils_t::rand_u64() % 0xFF);
+      }
+      regs.resize(utils_t::parameters.bot_code_size);
 
-      rip            = utils_t::rand_u64() % code.size();
-      mineral        = utils_t::parameters.bot_energy_max;
-      sunlight       = utils_t::parameters.bot_energy_max;
-      energy         = utils_t::parameters.bot_energy_max;
-      energy_daily   = utils_t::parameters.bot_energy_daily;
-      position       = utils_t::rand_u64() % (utils_t::parameters.position_max);
-      age            = 0;
-      name           = "r" + std::to_string(utils_t::rand_u64());
+      while (interrupts.size() < utils_t::parameters.bot_code_size) {
+        interrupts.push_back(utils_t::rand_u64() % 0xFF);
+      }
+      interrupts.resize(utils_t::parameters.bot_code_size);
+
+      mineral        = std::min(mineral, utils_t::parameters.bot_energy_max);
+      sunlight       = std::min(mineral, utils_t::parameters.bot_energy_max);
+      energy         = std::min(mineral, utils_t::parameters.bot_energy_max);
+      energy_daily   = std::min(mineral, utils_t::parameters.bot_energy_daily);
     }
 
     bool load(nlohmann::json& json) {
