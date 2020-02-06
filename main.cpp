@@ -25,8 +25,8 @@
 #define JSON_SAVE(json, name) json[#name] = name
 #define JSON_LOAD(json, name) name = json.value(#name, name)
 
-#define TRACE_TEST                 // DEBUG_LOGGER("test ", logger_indent_test_t::indent)
-#define LOG_TEST(...)              // DEBUG_LOG("test ", logger_indent_test_t::indent, __VA_ARGS__)
+#define TRACE_TEST                 DEBUG_LOGGER("test ", logger_indent_test_t::indent)
+#define LOG_TEST(...)              DEBUG_LOG("test ", logger_indent_test_t::indent, __VA_ARGS__)
 #define LOG_EPOLL(...)             DEBUG_LOG("epoll", logger_indent_test_t::indent, __VA_ARGS__)
 
 using namespace std::chrono_literals;
@@ -53,12 +53,13 @@ namespace genesis_n {
     size_t   bot_energy_daily         = 1;
     size_t   system_min_bot_count     = position_max / 10;
     size_t   system_epoll_port        = 8282;
+    size_t   time_ms                  = 0;
+    size_t   interval_update_world_ms = 100;
+    size_t   interval_save_world_ms   = 60 * 1000;
+    size_t   interval_load_parameters_ms   = 60 * 1000;
     std::string   system_epoll_ip     = "127.0.0.1";
     std::string   world_file          = "world.json";
     std::string   parameters_file     = "parameters.json";
-    size_t   time_ms                  = 0;
-    size_t   interval_save_world_ms   = 60 * 1000;
-    size_t   interval_load_parameters_ms   = 60 * 1000;
 
     void load(nlohmann::json& json) {
       TRACE_TEST;
@@ -78,6 +79,7 @@ namespace genesis_n {
       JSON_LOAD(json, world_file);
       JSON_LOAD(json, parameters_file);
       // JSON_LOAD(json, time_ms);
+      JSON_LOAD(json, interval_update_world_ms);
       JSON_LOAD(json, interval_save_world_ms);
       JSON_LOAD(json, interval_load_parameters_ms);
 
@@ -103,6 +105,7 @@ namespace genesis_n {
       JSON_SAVE(json, world_file);
       JSON_SAVE(json, parameters_file);
       JSON_SAVE(json, time_ms);
+      JSON_SAVE(json, interval_update_world_ms);
       JSON_SAVE(json, interval_save_world_ms);
       JSON_SAVE(json, interval_load_parameters_ms);
     }
@@ -256,9 +259,8 @@ namespace genesis_n {
       JSON_LOAD(json, age);
       JSON_LOAD(json, name);
 
-      code.resize(utils_t::parameters.bot_code_size);
-      regs.resize(utils_t::parameters.bot_regs_size);
-      interrupts.resize(utils_t::parameters.bot_interrupts_size);
+      // validation
+      update_parameters();
 
       return true;
     }
@@ -287,8 +289,9 @@ namespace genesis_n {
     stats_t                      stats;
     std::vector<bot_sptr_t>      bots;
     std::vector<system_sptr_t>   systems;
-    size_t                       last_time_save_words_ms = 0;
-    size_t                       last_time_load_parameters_ms = 0;
+    size_t                       time_update_world_ms = 0;
+    size_t                       time_save_words_ms = 0;
+    size_t                       time_load_parameters_ms = 0;
 
     world_t();
 
@@ -313,8 +316,6 @@ namespace genesis_n {
           }
         }
       }
-
-      last_time_save_words_ms = utils_t::parameters.time_ms;
     }
 
     void save() {
@@ -769,18 +770,28 @@ namespace genesis_n {
       system->update(*this);
     }
 
-    if (utils_t::parameters.interval_save_world_ms
-        + last_time_save_words_ms < utils_t::parameters.time_ms)
-    {
+    if (time_save_words_ms < utils_t::parameters.time_ms) {
       save();
-      last_time_save_words_ms = utils_t::parameters.time_ms;
+      time_save_words_ms = utils_t::parameters.time_ms
+        + utils_t::parameters.interval_save_world_ms;
     }
 
-    if (utils_t::parameters.interval_load_parameters_ms
-        + last_time_load_parameters_ms < utils_t::parameters.time_ms)
-    {
+    if (time_load_parameters_ms < utils_t::parameters.time_ms) {
       utils_t::update_parameters(utils_t::parameters.parameters_file);
-      last_time_load_parameters_ms = utils_t::parameters.time_ms;
+      time_load_parameters_ms = utils_t::parameters.time_ms
+        + utils_t::parameters.interval_load_parameters_ms;
+    }
+
+    if (time_update_world_ms > utils_t::parameters.time_ms) {
+      size_t dt = time_update_world_ms - utils_t::parameters.time_ms;
+      LOG_TEST("time: %zd %zd %zd", dt, utils_t::parameters.time_ms, time_update_world_ms);
+      std::this_thread::sleep_for(std::chrono::milliseconds(dt));
+      time_update_world_ms = time_update_world_ms
+        + utils_t::parameters.interval_update_world_ms;
+    }
+    else {
+      time_update_world_ms = utils_t::parameters.time_ms
+        + utils_t::parameters.interval_update_world_ms;
     }
   }
 
