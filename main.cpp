@@ -199,11 +199,9 @@ namespace genesis_n {
   };
 
   struct stats_t {
-    size_t   bots_alive;
-
-    stats_t() :
-      bots_alive(0)
-    { }
+    size_t   bots_alive = 0;
+    size_t   age_max = 0;
+    size_t   age_avg = 0;
   };
 
   struct bot_t {
@@ -259,9 +257,6 @@ namespace genesis_n {
       JSON_LOAD(json, age);
       JSON_LOAD(json, name);
 
-      // validation
-      update_parameters();
-
       return true;
     }
 
@@ -306,6 +301,7 @@ namespace genesis_n {
 
       auto& bots_json = json["bots"];
       if (bots_json.is_array()) {
+        bots.resize(bots_json.size());
         for (size_t i{}; i < bots_json.size(); ++i) {
           bot_t bot;
           if (bot.load(bots_json[i]) && bot.position < bots.size()) {
@@ -313,8 +309,6 @@ namespace genesis_n {
           }
         }
       }
-
-      update_parameters();
     }
 
     void save() {
@@ -345,10 +339,23 @@ namespace genesis_n {
       TRACE_TEST;
       auto& stats = world.stats;
       stats.bots_alive = 0;
-      std::for_each(world.bots.begin(), world.bots.end(),
-          [&stats](const auto& bot) { if (bot) stats.bots_alive++; });
+      stats.age_max = 0;
+      stats.age_avg = 0;
+
+      for (auto& bot : world.bots) {
+        if (!bot)
+          continue;
+
+        stats.bots_alive++;
+        stats.age_max = std::max(bot->age, stats.age_max);
+        stats.age_avg += bot->age;
+      }
+
+      stats.age_avg = stats.age_max / std::max(stats.bots_alive, 1UL);
 
       LOG_TEST("stats.bots_alive: %zd", stats.bots_alive);
+      LOG_TEST("stats.age_max:    %zd", stats.age_max);
+      LOG_TEST("stats.age_avg:    %zd", stats.age_avg);
     }
   };
 
@@ -375,7 +382,7 @@ namespace genesis_n {
           continue;
 
         LOG_TEST("");
-        LOG_TEST("bot:          %p", bot.get());
+        LOG_TEST("bot:          %p",  bot.get());
         LOG_TEST("mineral:      %zd", bot->mineral);
         LOG_TEST("sunlight:     %zd", bot->sunlight);
         LOG_TEST("energy:       %zd", bot->energy);
