@@ -11,6 +11,7 @@
 #include <thread>
 #include <deque>
 #include <list>
+#include <set>
 
 #include <sys/epoll.h>
 #include <sys/socket.h>
@@ -25,13 +26,22 @@
 #define JSON_SAVE(json, name) json[#name] = name
 #define JSON_LOAD(json, name) name = json.value(#name, name)
 
-#define TRACE_TEST                 DEBUG_LOGGER("test ", logger_indent_test_t::indent)
-#define LOG_TEST(...)              DEBUG_LOG("test ", logger_indent_test_t::indent, __VA_ARGS__)
-#define LOG_EPOLL(...)             DEBUG_LOG("epoll", logger_indent_test_t::indent, __VA_ARGS__)
+#define TRACE_GENESIS {   \
+  if (utils_t::parameters.debug.contains(utils_t::TRACE)) {   \
+    DEBUG_LOGGER(utils_t::TRACE.c_str(), logger_indent_genesis_t::indent);   \
+  }   \
+}
+#define LOG_GENESIS(name, ...) {   \
+  if (utils_t::parameters.debug.contains(utils_t::name)) {   \
+    DEBUG_LOG(utils_t::name.c_str(), logger_indent_genesis_t::indent, __VA_ARGS__);   \
+  }   \
+}
+
+
 
 using namespace std::chrono_literals;
 
-struct logger_indent_test_t   : logger_indent_t<logger_indent_test_t> { };
+struct logger_indent_genesis_t   : logger_indent_t<logger_indent_genesis_t> { };
 
 
 
@@ -60,60 +70,22 @@ namespace genesis_n {
     std::string   system_epoll_ip     = "127.0.0.1";
     std::string   world_file          = "world.json";
     std::string   parameters_file     = "parameters.json";
+    std::set<std::string>   debug     = {"error"};
 
-    void load(nlohmann::json& json) {
-      TRACE_TEST;
-      if (!json.is_object())
-        return;
-
-      JSON_LOAD(json, position_n);
-      JSON_LOAD(json, position_max);
-      JSON_LOAD(json, bot_code_size);
-      JSON_LOAD(json, bot_regs_size);
-      JSON_LOAD(json, bot_interrupts_size);
-      JSON_LOAD(json, bot_energy_max);
-      JSON_LOAD(json, bot_energy_daily);
-      JSON_LOAD(json, system_min_bot_count);
-      JSON_LOAD(json, system_epoll_port);
-      JSON_LOAD(json, system_epoll_ip);
-      JSON_LOAD(json, world_file);
-      JSON_LOAD(json, parameters_file);
-      // JSON_LOAD(json, time_ms);
-      JSON_LOAD(json, interval_update_world_ms);
-      JSON_LOAD(json, interval_save_world_ms);
-      JSON_LOAD(json, interval_load_parameters_ms);
-
-      // correct: position_max % position_n == 0
-      position_max = (position_max / position_n) * position_n;
-    }
-
-    void save(nlohmann::json& json) {
-      TRACE_TEST;
-      if (!json.is_object())
-        json = nlohmann::json::object();
-
-      JSON_SAVE(json, position_n);
-      JSON_SAVE(json, position_max);
-      JSON_SAVE(json, bot_code_size);
-      JSON_SAVE(json, bot_regs_size);
-      JSON_SAVE(json, bot_interrupts_size);
-      JSON_SAVE(json, bot_energy_max);
-      JSON_SAVE(json, bot_energy_daily);
-      JSON_SAVE(json, system_min_bot_count);
-      JSON_SAVE(json, system_epoll_port);
-      JSON_SAVE(json, system_epoll_ip);
-      JSON_SAVE(json, world_file);
-      JSON_SAVE(json, parameters_file);
-      JSON_SAVE(json, time_ms);
-      JSON_SAVE(json, interval_update_world_ms);
-      JSON_SAVE(json, interval_save_world_ms);
-      JSON_SAVE(json, interval_load_parameters_ms);
-    }
+    void load(nlohmann::json& json);
+    void save(nlohmann::json& json);
   };
 
   struct utils_t {
     inline static size_t seed = time(0);
     inline static parameters_t parameters = {};
+
+    inline static std::string TRACE = "trace";
+    inline static std::string EPOLL = "epoll";
+    inline static std::string STATS = "stats";
+    inline static std::string ERROR = "error";
+    inline static std::string INFO  = "info ";
+    inline static std::string DEBUG = "debug";
 
     static double rand_double() {
       static std::mt19937 gen(seed);
@@ -128,7 +100,7 @@ namespace genesis_n {
     }
 
     static void update_parameters(const std::string& name) {
-      TRACE_TEST;
+      TRACE_GENESIS;
       nlohmann::json json;
       utils_t::load(json, name);
       parameters.load(json);
@@ -138,7 +110,7 @@ namespace genesis_n {
     }
 
     static void rename(const std::string& name_old, const std::string& name_new) {
-      TRACE_TEST;
+      TRACE_GENESIS;
       std::error_code ec;
       std::filesystem::rename(name_old, name_new, ec);
       if (ec) {
@@ -147,7 +119,7 @@ namespace genesis_n {
     }
 
     static void remove(const std::string& name) {
-      TRACE_TEST;
+      TRACE_GENESIS;
       std::error_code ec;
       std::filesystem::remove(name, ec);
       if (ec) {
@@ -156,7 +128,7 @@ namespace genesis_n {
     }
 
     static bool load(nlohmann::json& json, const std::string& name) {
-      TRACE_TEST;
+      TRACE_GENESIS;
       try {
         std::ifstream file(name);
         file >> json;
@@ -178,7 +150,7 @@ namespace genesis_n {
     }
 
     static bool save(const nlohmann::json& json, const std::string& name) {
-      TRACE_TEST;
+      TRACE_GENESIS;
       std::string name_tmp = name + ".tmp";
       try {
         std::ofstream file(name_tmp);
@@ -218,7 +190,7 @@ namespace genesis_n {
     std::string            name             = "r" + std::to_string(utils_t::rand_u64());
 
     void update_parameters() {
-      TRACE_TEST;
+      TRACE_GENESIS;
       while (code.size() < utils_t::parameters.bot_code_size) {
         code.push_back(utils_t::rand_u64() % 0xFF);
       }
@@ -241,9 +213,11 @@ namespace genesis_n {
     }
 
     bool load(nlohmann::json& json) {
-      TRACE_TEST;
-      if (!json.is_object())
+      TRACE_GENESIS;
+      if (!json.is_object()) {
+        LOG_GENESIS(ERROR, "json is not object");
         return false;
+      }
 
       JSON_LOAD(json, code);
       JSON_LOAD(json, regs);
@@ -261,7 +235,7 @@ namespace genesis_n {
     }
 
     void save(nlohmann::json& json) {
-      TRACE_TEST;
+      TRACE_GENESIS;
 
       if (!json.is_object())
         json = nlohmann::json::object();
@@ -295,13 +269,13 @@ namespace genesis_n {
     void update_parameters();
 
     void load() {
-      TRACE_TEST;
+      TRACE_GENESIS;
       nlohmann::json json;
       utils_t::load(json, utils_t::parameters.world_file);
 
       auto& bots_json = json["bots"];
       if (bots_json.is_array()) {
-        bots.resize(bots_json.size());
+        bots.resize(utils_t::parameters.position_max);
         for (size_t i{}; i < bots_json.size(); ++i) {
           bot_t bot;
           if (bot.load(bots_json[i]) && bot.position < bots.size()) {
@@ -312,7 +286,7 @@ namespace genesis_n {
     }
 
     void save() {
-      TRACE_TEST;
+      TRACE_GENESIS;
       nlohmann::json json;
 
       auto& bots_json = json["bots"];
@@ -336,7 +310,7 @@ namespace genesis_n {
 
   struct system_bot_stats_t : system_t {
     void update(world_t& world) override {
-      TRACE_TEST;
+      TRACE_GENESIS;
       auto& stats = world.stats;
       stats.bots_alive = 0;
       stats.age_max = 0;
@@ -353,15 +327,16 @@ namespace genesis_n {
 
       stats.age_avg = stats.age_max / std::max(stats.bots_alive, 1UL);
 
-      LOG_TEST("stats.bots_alive: %zd", stats.bots_alive);
-      LOG_TEST("stats.age_max:    %zd", stats.age_max);
-      LOG_TEST("stats.age_avg:    %zd", stats.age_avg);
+      LOG_GENESIS(STATS, "stats.bots_alive: %zd", stats.bots_alive);
+      LOG_GENESIS(STATS, "stats.bots_alive: %zd", stats.bots_alive);
+      LOG_GENESIS(STATS, "stats.age_max:    %zd", stats.age_max);
+      LOG_GENESIS(STATS, "stats.age_avg:    %zd", stats.age_avg);
     }
   };
 
   struct system_bot_generator_t : system_t {
     void update(world_t& world) override {
-      TRACE_TEST;
+      TRACE_GENESIS;
 
       if (world.stats.bots_alive < utils_t::parameters.system_min_bot_count) {
         bot_t bot_new;
@@ -375,26 +350,26 @@ namespace genesis_n {
 
   struct system_bot_updater_t : system_t {
     void update(world_t& world) override {
-      TRACE_TEST;
+      TRACE_GENESIS;
 
       for (auto& bot : world.bots) {
         if (!bot)
           continue;
 
-        LOG_TEST("");
-        LOG_TEST("bot:          %p",  bot.get());
-        LOG_TEST("mineral:      %zd", bot->mineral);
-        LOG_TEST("sunlight:     %zd", bot->sunlight);
-        LOG_TEST("energy:       %zd", bot->energy);
-        LOG_TEST("position:     %zd", bot->position);
-        LOG_TEST("rip:          %zd", bot->rip);
-        LOG_TEST("age:          %zd", bot->age);
-        LOG_TEST("energy_daily: %zd", bot->energy_daily);
+        LOG_GENESIS(DEBUG, "");
+        LOG_GENESIS(DEBUG, "bot:          %p",  bot.get());
+        LOG_GENESIS(DEBUG, "mineral:      %zd", bot->mineral);
+        LOG_GENESIS(DEBUG, "sunlight:     %zd", bot->sunlight);
+        LOG_GENESIS(DEBUG, "energy:       %zd", bot->energy);
+        LOG_GENESIS(DEBUG, "position:     %zd", bot->position);
+        LOG_GENESIS(DEBUG, "rip:          %zd", bot->rip);
+        LOG_GENESIS(DEBUG, "age:          %zd", bot->age);
+        LOG_GENESIS(DEBUG, "energy_daily: %zd", bot->energy_daily);
 
         // TODO for (x : bot->energy_daily)
         if (!bot->energy || bot->energy < bot->energy_daily) {
           bot.reset();
-          LOG_TEST("DEAD");
+          LOG_GENESIS(DEBUG, "DEAD");
           continue;
         }
 
@@ -411,24 +386,24 @@ namespace genesis_n {
 
         bot->rip = bot->rip % bot->code.size();
         size_t cmd = bot->code[(bot->rip++) % bot->code.size()];
-        LOG_TEST("cmd: %zd", (size_t) cmd);
+        LOG_GENESIS(DEBUG, "cmd: %zd", (size_t) cmd);
         switch (cmd) {
           // RISC instructions:
           case 0: {
             uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()];
-            LOG_TEST("BR <%d>", arg1);
+            LOG_GENESIS(DEBUG, "BR <%d>", arg1);
             bot->rip += arg1;
             break;
           } case 1: {
             uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
             uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()];
-            LOG_TEST("SET <%%%d> <%d>", arg1, arg2);
+            LOG_GENESIS(DEBUG, "SET <%%%d> <%d>", arg1, arg2);
             bot->regs[arg1] = arg2;
             break;
           } case 2: {
             uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
             uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-            LOG_TEST("MOV <%%%d> = <%%%d>", arg1, arg2);
+            LOG_GENESIS(DEBUG, "MOV <%%%d> = <%%%d>", arg1, arg2);
             bot->regs[arg1] = bot->regs[arg2];
             break;
           } case 3: {
@@ -436,7 +411,7 @@ namespace genesis_n {
             uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
             uint8_t arg3 = bot->code[(bot->rip++) % bot->code.size()];
             uint8_t arg4 = bot->code[(bot->rip++) % bot->code.size()];
-            LOG_TEST("IF > <%%%d> <%%%d> <%d> <%d>", arg1, arg2, arg3, arg4);
+            LOG_GENESIS(DEBUG, "IF > <%%%d> <%%%d> <%d> <%d>", arg1, arg2, arg3, arg4);
             bot->rip += (bot->regs[arg1] > bot->regs[arg2]) ? arg3 : arg4;
             break;
           } case 4: {
@@ -444,61 +419,61 @@ namespace genesis_n {
             uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
             uint8_t arg3 = bot->code[(bot->rip++) % bot->code.size()];
             uint8_t arg4 = bot->code[(bot->rip++) % bot->code.size()];
-            LOG_TEST("IF < <%%%d> <%%%d> <%d> <%d>", arg1, arg2, arg3, arg4);
+            LOG_GENESIS(DEBUG, "IF < <%%%d> <%%%d> <%d> <%d>", arg1, arg2, arg3, arg4);
             bot->rip += (bot->regs[arg1] < bot->regs[arg2]) ? arg3 : arg4;
             break;
           } case 5: {
             uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
             uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
             uint8_t arg3 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-            LOG_TEST("ADD <%%%d> <%%%d> <%%%d>", arg1, arg2, arg3);
+            LOG_GENESIS(DEBUG, "ADD <%%%d> <%%%d> <%%%d>", arg1, arg2, arg3);
             bot->regs[arg1] = bot->regs[arg2] + bot->regs[arg3];
             break;
 
             // Bot instructions:
           } case 32: {
             uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % 9;
-            LOG_TEST("TODO MOVE <%d>", arg1);
+            LOG_GENESIS(DEBUG, "TODO MOVE <%d>", arg1);
             break;
           } case 33: {
             uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % 9;
-            LOG_TEST("TODO ATTACK <%d>", arg1);
+            LOG_GENESIS(DEBUG, "TODO ATTACK <%d>", arg1);
             break;
           } case 34: {
             uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-            LOG_TEST("GET MINERAL <%%%d>", arg1);
+            LOG_GENESIS(DEBUG, "GET MINERAL <%%%d>", arg1);
             bot->regs[arg1] = bot->mineral % 0xFF;
             break;
           } case 35: {
             uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-            LOG_TEST("GET SUNLIGHT <%%%d>", arg1);
+            LOG_GENESIS(DEBUG, "GET SUNLIGHT <%%%d>", arg1);
             bot->regs[arg1] = bot->sunlight % 0xFF;
             break;
           } case 36: {
             uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-            LOG_TEST("GET ENERGY <%%%d>", arg1);
+            LOG_GENESIS(DEBUG, "GET ENERGY <%%%d>", arg1);
             bot->regs[arg1] = bot->energy % 0xFF;
             break;
           } case 37: {
-            LOG_TEST("EXTRACT MINERAL");
+            LOG_GENESIS(DEBUG, "EXTRACT MINERAL");
             bot->mineral = utils_t::parameters.bot_energy_max;
             break;
           } case 38: {
-            LOG_TEST("EXTRACT SUNLIGHT");
+            LOG_GENESIS(DEBUG, "EXTRACT SUNLIGHT");
             bot->sunlight = utils_t::parameters.bot_energy_max;
             break;
           } case 39: {
-            LOG_TEST("CONVERT MINERAL");
+            LOG_GENESIS(DEBUG, "CONVERT MINERAL");
             bot->energy = (bot->energy + bot->mineral) % utils_t::parameters.bot_energy_max;
             bot->mineral = 0;
             break;
           } case 40: {
-            LOG_TEST("CONVERT SUNLIGHT");
+            LOG_GENESIS(DEBUG, "CONVERT SUNLIGHT");
             bot->energy = (bot->energy + bot->sunlight) % utils_t::parameters.bot_energy_max;
             bot->sunlight = 0;
             break;
           } case 41: {
-            LOG_TEST("TODO CLONE");
+            LOG_GENESIS(DEBUG, "TODO CLONE");
             if (bot->energy > utils_t::parameters.bot_energy_max / 2) {
               ;
               // bot->energy -= utils_t::parameters.bot_energy_max / 2;
@@ -532,7 +507,7 @@ namespace genesis_n {
     inline static const std::string ct_json = "application/json";
 
     void update_parameters() override {
-      TRACE_TEST;
+      TRACE_GENESIS;
       is_run = false;
 
       if (fd_epoll = epoll_create1(0); fd_epoll < 0) {
@@ -585,7 +560,7 @@ namespace genesis_n {
     }
 
     void update(world_t& world) override {
-      TRACE_TEST;
+      TRACE_GENESIS;
 
       if (!is_run) {
         update_parameters();
@@ -596,23 +571,23 @@ namespace genesis_n {
 
       for (int i = 0; i < event_count; i++) {
         epoll_event& event = events[i];
-        LOG_EPOLL("events: 0x%x", event.events);
-        LOG_EPOLL("data.fd: %d", event.data.fd);
+        LOG_GENESIS(EPOLL, "events: 0x%x", event.events);
+        LOG_GENESIS(EPOLL, "data.fd: %d", event.data.fd);
 
         if ((event.events & EPOLLERR) ||
             (event.events & EPOLLHUP) ||
             (!(event.events & (EPOLLIN | EPOLLOUT))))
         {
-          LOG_EPOLL("epoll error");
+          LOG_GENESIS(EPOLL, "epoll error");
           close(event.data.fd);
           continue;
         }
 
         if (event.data.fd == fd_listen) {
-          LOG_EPOLL("new connection");
+          LOG_GENESIS(EPOLL, "new connection");
 
           int fd = accept(fd_listen , 0, 0);
-          LOG_EPOLL("fd: %d", fd);
+          LOG_GENESIS(EPOLL, "fd: %d", fd);
           if (fd < 0) {
             std::cerr << "WARN: fd: " << fd << std::endl;
             close_all();
@@ -693,7 +668,7 @@ namespace genesis_n {
 
       bytes_write = write(fd, buffer_tmp, bytes_write);
       buffer_resp.erase(buffer_resp.begin(), buffer_resp.begin() + bytes_write);
-      LOG_EPOLL("write: %d", bytes_write);
+      LOG_GENESIS(EPOLL, "write: %d", bytes_write);
 
       if (buffer_resp.empty()) {
         if (set_epoll_ctl(fd, EPOLLIN, EPOLL_CTL_MOD) < 0) {
@@ -704,14 +679,14 @@ namespace genesis_n {
 
     void process_read(int fd) {
       int bytes_read = read(fd, buffer_tmp, sizeof(buffer_tmp));
-      LOG_EPOLL("read: fd: %d, bytes_read: %d", fd, bytes_read);
+      LOG_GENESIS(EPOLL, "read: fd: %d, bytes_read: %d", fd, bytes_read);
       if (bytes_read == -1) {
         if (errno != EAGAIN) {
-          LOG_EPOLL("errno: !EAGAIN");
+          LOG_GENESIS(EPOLL, "errno: !EAGAIN");
           close(fd);
         }
       } else if (bytes_read == 0) {
-        LOG_EPOLL("bytes_read == 0");
+        LOG_GENESIS(EPOLL, "bytes_read == 0");
         shutdown(fd, SHUT_RDWR);
         close(fd);
         buffers.erase(fd);
@@ -730,7 +705,7 @@ namespace genesis_n {
         if (it != buffer_req.end()) {
           // GET found
           it += NL2.size();
-          LOG_EPOLL("msg: '%s'", std::string(buffer_req.begin(), it).c_str());
+          LOG_GENESIS(EPOLL, "msg: '%s'", std::string(buffer_req.begin(), it).c_str());
           buffer_req.erase(buffer_req.begin(), it);
 
           std::string response = "<h1>amyasnikov: genesis</h1>";
@@ -761,7 +736,59 @@ namespace genesis_n {
     }
   };
 
+  ////////////////////////////////////////////////////////////////////////////////
 
+  void parameters_t::load(nlohmann::json& json) {
+    TRACE_GENESIS;
+    if (!json.is_object())
+      return;
+
+    JSON_LOAD(json, position_n);
+    JSON_LOAD(json, position_max);
+    JSON_LOAD(json, bot_code_size);
+    JSON_LOAD(json, bot_regs_size);
+    JSON_LOAD(json, bot_interrupts_size);
+    JSON_LOAD(json, bot_energy_max);
+    JSON_LOAD(json, bot_energy_daily);
+    JSON_LOAD(json, system_min_bot_count);
+    JSON_LOAD(json, system_epoll_port);
+    JSON_LOAD(json, system_epoll_ip);
+    JSON_LOAD(json, world_file);
+    JSON_LOAD(json, parameters_file);
+    // JSON_LOAD(json, time_ms);
+    JSON_LOAD(json, interval_update_world_ms);
+    JSON_LOAD(json, interval_save_world_ms);
+    JSON_LOAD(json, interval_load_parameters_ms);
+    JSON_LOAD(json, debug);
+
+    position_max = (position_max / position_n) * position_n;
+  }
+
+  void parameters_t::save(nlohmann::json& json) {
+    TRACE_GENESIS;
+    if (!json.is_object())
+      json = nlohmann::json::object();
+
+    JSON_SAVE(json, position_n);
+    JSON_SAVE(json, position_max);
+    JSON_SAVE(json, bot_code_size);
+    JSON_SAVE(json, bot_regs_size);
+    JSON_SAVE(json, bot_interrupts_size);
+    JSON_SAVE(json, bot_energy_max);
+    JSON_SAVE(json, bot_energy_daily);
+    JSON_SAVE(json, system_min_bot_count);
+    JSON_SAVE(json, system_epoll_port);
+    JSON_SAVE(json, system_epoll_ip);
+    JSON_SAVE(json, world_file);
+    JSON_SAVE(json, parameters_file);
+    JSON_SAVE(json, time_ms);
+    JSON_SAVE(json, interval_update_world_ms);
+    JSON_SAVE(json, interval_save_world_ms);
+    JSON_SAVE(json, interval_load_parameters_ms);
+    JSON_SAVE(json, debug);
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
 
   world_t::world_t() {
     systems.push_back(std::make_shared<system_time_t>());
@@ -772,7 +799,7 @@ namespace genesis_n {
   }
 
   void world_t::update() {
-    TRACE_TEST;
+    TRACE_GENESIS;
     for (auto& system : systems) {
       system->update(*this);
     }
@@ -791,7 +818,7 @@ namespace genesis_n {
 
     if (time_update_world_ms > utils_t::parameters.time_ms) {
       size_t dt = time_update_world_ms - utils_t::parameters.time_ms;
-      LOG_TEST("time: %zd %zd %zd", dt, utils_t::parameters.time_ms, time_update_world_ms);
+      LOG_GENESIS(DEBUG, "time: %zd %zd %zd", dt, utils_t::parameters.time_ms, time_update_world_ms);
       std::this_thread::sleep_for(std::chrono::milliseconds(dt));
       time_update_world_ms = time_update_world_ms
         + utils_t::parameters.interval_update_world_ms;
@@ -803,7 +830,7 @@ namespace genesis_n {
 
 
   void world_t::update_parameters() {
-    TRACE_TEST;
+    TRACE_GENESIS;
     for (auto& system : systems) {
       system->update_parameters();
     }
@@ -818,8 +845,6 @@ namespace genesis_n {
 
 
 int main(int argc, char* argv[]) {
-  TRACE_TEST;
-
   std::string parameters_file = "parameters.json";
 
   if (argc > 1) {
