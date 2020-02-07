@@ -86,6 +86,7 @@ namespace genesis_n {
     inline static std::string ERROR = "error";
     inline static std::string INFO  = "info ";
     inline static std::string DEBUG = "debug";
+    inline static std::string MIND  = "mind";
 
     static double rand_double();
     static size_t rand_u64();
@@ -185,7 +186,6 @@ namespace genesis_n {
   };
 
   struct system_time_t : system_t {
-    void update_parameters() override;
     void update(world_t& world) override;
   };
 
@@ -270,7 +270,7 @@ namespace genesis_n {
     std::error_code ec;
     std::filesystem::rename(name_old, name_new, ec);
     if (ec) {
-      std::cerr << "WARN: " << ec.message() << std::endl;
+      LOG_GENESIS(ERROR, "%s", ec.message().c_str());
     }
   }
 
@@ -279,7 +279,7 @@ namespace genesis_n {
     std::error_code ec;
     std::filesystem::remove(name, ec);
     if (ec) {
-      std::cerr << "WARN: " << ec.message() << std::endl;
+      LOG_GENESIS(ERROR, "%s", ec.message().c_str());
     }
   }
 
@@ -290,7 +290,7 @@ namespace genesis_n {
       file >> json;
       return true;
     } catch (const std::exception& e) {
-      std::cerr << "WARN: " << e.what() << std::endl;
+      LOG_GENESIS(ERROR, "%s", e.what());
     }
 
     std::string name_tmp = name + ".tmp";
@@ -299,7 +299,7 @@ namespace genesis_n {
       file >> json;
       return true;
     } catch (const std::exception& e) {
-      std::cerr << "WARN: " << e.what() << std::endl;
+      LOG_GENESIS(ERROR, "%s", e.what());
     }
     utils_t::remove(name_tmp);
     return false;
@@ -316,7 +316,7 @@ namespace genesis_n {
       utils_t::remove(name_tmp);
       return true;
     } catch (const std::exception& e) {
-      std::cerr << "WARN: " << e.what() << std::endl;
+      LOG_GENESIS(ERROR, "%s", e.what());
       return false;
     }
   }
@@ -449,8 +449,7 @@ namespace genesis_n {
     if (bots_json.is_array()) {
       bots.resize(utils_t::parameters.position_max);
       for (size_t i{}; i < bots_json.size(); ++i) {
-        bot_t bot;
-        if (bot.load(bots_json[i]) && bot.position < bots.size()) {
+        if (bot_t bot; bot.load(bots_json[i]) && bot.position < bots.size()) {
           bots[bot.position] = std::make_shared<bot_t>(bot);
         }
       }
@@ -523,15 +522,15 @@ namespace genesis_n {
       if (!bot)
         continue;
 
-      LOG_GENESIS(DEBUG, "");
-      LOG_GENESIS(DEBUG, "bot:          %p",  bot.get());
-      LOG_GENESIS(DEBUG, "mineral:      %zd", bot->mineral);
-      LOG_GENESIS(DEBUG, "sunlight:     %zd", bot->sunlight);
-      LOG_GENESIS(DEBUG, "energy:       %zd", bot->energy);
-      LOG_GENESIS(DEBUG, "position:     %zd", bot->position);
-      LOG_GENESIS(DEBUG, "rip:          %zd", bot->rip);
-      LOG_GENESIS(DEBUG, "age:          %zd", bot->age);
-      LOG_GENESIS(DEBUG, "energy_daily: %zd", bot->energy_daily);
+      LOG_GENESIS(MIND, "");
+      LOG_GENESIS(MIND, "bot:          %p",  bot.get());
+      LOG_GENESIS(MIND, "mineral:      %zd", bot->mineral);
+      LOG_GENESIS(MIND, "sunlight:     %zd", bot->sunlight);
+      LOG_GENESIS(MIND, "energy:       %zd", bot->energy);
+      LOG_GENESIS(MIND, "position:     %zd", bot->position);
+      LOG_GENESIS(MIND, "rip:          %zd", bot->rip);
+      LOG_GENESIS(MIND, "age:          %zd", bot->age);
+      LOG_GENESIS(MIND, "energy_daily: %zd", bot->energy_daily);
 
       if (!bot->energy_daily)
         continue;
@@ -539,7 +538,7 @@ namespace genesis_n {
       // TODO for (x : bot->energy_daily)
       if (!bot->energy || bot->energy < bot->energy_daily) {
         bot.reset();
-        LOG_GENESIS(DEBUG, "DEAD");
+        LOG_GENESIS(MIND, "DEAD");
         continue;
       }
 
@@ -556,24 +555,24 @@ namespace genesis_n {
 
       bot->rip = bot->rip % bot->code.size();
       size_t cmd = bot->code[(bot->rip++) % bot->code.size()];
-      LOG_GENESIS(DEBUG, "cmd: %zd", (size_t) cmd);
+      LOG_GENESIS(MIND, "cmd: %zd", (size_t) cmd);
       switch (cmd) {
         // RISC instructions:
         case 0: {
           uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()];
-          LOG_GENESIS(DEBUG, "BR <%d>", arg1);
+          LOG_GENESIS(MIND, "BR <%d>", arg1);
           bot->rip += arg1;
           break;
         } case 1: {
           uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
           uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()];
-          LOG_GENESIS(DEBUG, "SET <%%%d> <%d>", arg1, arg2);
+          LOG_GENESIS(MIND, "SET <%%%d> <%d>", arg1, arg2);
           bot->regs[arg1] = arg2;
           break;
         } case 2: {
           uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
           uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-          LOG_GENESIS(DEBUG, "MOV <%%%d> = <%%%d>", arg1, arg2);
+          LOG_GENESIS(MIND, "MOV <%%%d> = <%%%d>", arg1, arg2);
           bot->regs[arg1] = bot->regs[arg2];
           break;
         } case 3: {
@@ -581,7 +580,7 @@ namespace genesis_n {
           uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
           uint8_t arg3 = bot->code[(bot->rip++) % bot->code.size()];
           uint8_t arg4 = bot->code[(bot->rip++) % bot->code.size()];
-          LOG_GENESIS(DEBUG, "IF > <%%%d> <%%%d> <%d> <%d>", arg1, arg2, arg3, arg4);
+          LOG_GENESIS(MIND, "IF > <%%%d> <%%%d> <%d> <%d>", arg1, arg2, arg3, arg4);
           bot->rip += (bot->regs[arg1] > bot->regs[arg2]) ? arg3 : arg4;
           break;
         } case 4: {
@@ -589,61 +588,61 @@ namespace genesis_n {
           uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
           uint8_t arg3 = bot->code[(bot->rip++) % bot->code.size()];
           uint8_t arg4 = bot->code[(bot->rip++) % bot->code.size()];
-          LOG_GENESIS(DEBUG, "IF < <%%%d> <%%%d> <%d> <%d>", arg1, arg2, arg3, arg4);
+          LOG_GENESIS(MIND, "IF < <%%%d> <%%%d> <%d> <%d>", arg1, arg2, arg3, arg4);
           bot->rip += (bot->regs[arg1] < bot->regs[arg2]) ? arg3 : arg4;
           break;
         } case 5: {
           uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
           uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
           uint8_t arg3 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-          LOG_GENESIS(DEBUG, "ADD <%%%d> <%%%d> <%%%d>", arg1, arg2, arg3);
+          LOG_GENESIS(MIND, "ADD <%%%d> <%%%d> <%%%d>", arg1, arg2, arg3);
           bot->regs[arg1] = bot->regs[arg2] + bot->regs[arg3];
           break;
 
           // Bot instructions:
         } case 32: {
           uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % 9;
-          LOG_GENESIS(DEBUG, "TODO MOVE <%d>", arg1);
+          LOG_GENESIS(MIND, "TODO MOVE <%d>", arg1);
           break;
         } case 33: {
           uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % 9;
-          LOG_GENESIS(DEBUG, "TODO ATTACK <%d>", arg1);
+          LOG_GENESIS(MIND, "TODO ATTACK <%d>", arg1);
           break;
         } case 34: {
           uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-          LOG_GENESIS(DEBUG, "GET MINERAL <%%%d>", arg1);
+          LOG_GENESIS(MIND, "GET MINERAL <%%%d>", arg1);
           bot->regs[arg1] = bot->mineral % 0xFF;
           break;
         } case 35: {
           uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-          LOG_GENESIS(DEBUG, "GET SUNLIGHT <%%%d>", arg1);
+          LOG_GENESIS(MIND, "GET SUNLIGHT <%%%d>", arg1);
           bot->regs[arg1] = bot->sunlight % 0xFF;
           break;
         } case 36: {
           uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-          LOG_GENESIS(DEBUG, "GET ENERGY <%%%d>", arg1);
+          LOG_GENESIS(MIND, "GET ENERGY <%%%d>", arg1);
           bot->regs[arg1] = bot->energy % 0xFF;
           break;
         } case 37: {
-          LOG_GENESIS(DEBUG, "EXTRACT MINERAL");
+          LOG_GENESIS(MIND, "EXTRACT MINERAL");
           bot->mineral = utils_t::parameters.bot_energy_max;
           break;
         } case 38: {
-          LOG_GENESIS(DEBUG, "EXTRACT SUNLIGHT");
+          LOG_GENESIS(MIND, "EXTRACT SUNLIGHT");
           bot->sunlight = utils_t::parameters.bot_energy_max;
           break;
         } case 39: {
-          LOG_GENESIS(DEBUG, "CONVERT MINERAL");
+          LOG_GENESIS(MIND, "CONVERT MINERAL");
           bot->energy = (bot->energy + bot->mineral) % utils_t::parameters.bot_energy_max;
           bot->mineral = 0;
           break;
         } case 40: {
-          LOG_GENESIS(DEBUG, "CONVERT SUNLIGHT");
+          LOG_GENESIS(MIND, "CONVERT SUNLIGHT");
           bot->energy = (bot->energy + bot->sunlight) % utils_t::parameters.bot_energy_max;
           bot->sunlight = 0;
           break;
         } case 41: {
-          LOG_GENESIS(DEBUG, "TODO CLONE");
+          LOG_GENESIS(MIND, "TODO CLONE");
           if (bot->energy > utils_t::parameters.bot_energy_max / 2) {
             ;
             // bot->energy -= utils_t::parameters.bot_energy_max / 2;
@@ -665,24 +664,24 @@ namespace genesis_n {
     is_run = false;
 
     if (fd_epoll = epoll_create1(0); fd_epoll < 0) {
-      std::cerr << "WARN: fd_epoll: " << fd_epoll << std::endl;
+      LOG_GENESIS(ERROR, "fd_epoll: %d", fd_epoll);
       close_all();
     }
 
     if (fd_listen = socket(AF_INET, SOCK_STREAM, 0); fd_listen < 0) {
-      std::cerr << "WARN: fd_listen: " << fd_listen << std::endl;
+      LOG_GENESIS(ERROR, "fd_listen: %d", fd_listen);
       close_all();
     }
 
     int on = 1;
     if (int ret = setsockopt(fd_listen, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)); ret < 0) {
-      std::cerr << "WARN: setsockopt(...): " << ret << std::endl;
+      LOG_GENESIS(ERROR, "setsockopt(...): %d", ret);
       close_all();
     }
 
     in_addr ip_addr = {0};
     if (int ret = inet_pton(AF_INET, utils_t::parameters.system_epoll_ip.c_str(), &ip_addr); ret < 0) {
-      std::cerr << "WARN: inet_pton(...): " << ret << std::endl;
+      LOG_GENESIS(ERROR, "inet_pton(...): %d", ret);
       close_all();
     }
 
@@ -693,7 +692,7 @@ namespace genesis_n {
     addr.sin_port        = htons((uint16_t) utils_t::parameters.system_epoll_port);
 
     if (int ret = bind(fd_listen, (sockaddr *) &addr, sizeof(addr)); ret < 0) {
-      std::cerr << "WARN: bind(...): " << ret << std::endl;
+      LOG_GENESIS(ERROR, "bind(...): %d", ret);
       close_all();
     }
 
@@ -702,7 +701,7 @@ namespace genesis_n {
     }
 
     if (int ret = listen(fd_listen, SOMAXCONN); ret < 0) {
-      std::cerr << "WARN: listen(...): " << ret << std::endl;
+      LOG_GENESIS(ERROR, "listen(...): %d", ret);
       close_all();
     }
 
@@ -743,7 +742,7 @@ namespace genesis_n {
         int fd = accept(fd_listen , 0, 0);
         LOG_GENESIS(EPOLL, "fd: %d", fd);
         if (fd < 0) {
-          std::cerr << "WARN: fd: " << fd << std::endl;
+          LOG_GENESIS(ERROR, "fd: %d", fd);
           close_all();
         }
 
@@ -779,7 +778,7 @@ namespace genesis_n {
   }
 
   void system_epoll_t::close_all() {
-    std::cerr << "WARN: epoll: close_all()" << std::endl;
+    TRACE_GENESIS;
     for (auto& kv : buffers) {
       close(kv.first);
     }
@@ -795,7 +794,7 @@ namespace genesis_n {
 
     int ret = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
     if (ret < 0) {
-      std::cerr << "WARN: fcntl(...): " << ret << std::endl;
+      LOG_GENESIS(ERROR, "fcntl(...): %d", ret);
     }
     return ret;
   }
@@ -806,12 +805,13 @@ namespace genesis_n {
     event.events = events;
     int ret = epoll_ctl(fd_epoll, op, fd, &event);
     if (ret < 0) {
-      std::cerr << "WARN: epoll_ctl(...): " << ret << std::endl;
+      LOG_GENESIS(ERROR, "epoll_ctl(...): %d", ret);
     }
     return ret;
   }
 
   void system_epoll_t::process_write(int fd) {
+    TRACE_GENESIS;
     auto& buffer = buffers[fd];
     auto& buffer_resp = buffer.second;
 
@@ -832,6 +832,7 @@ namespace genesis_n {
   }
 
   void system_epoll_t::process_read(int fd) {
+    TRACE_GENESIS;
     int bytes_read = read(fd, buffer_tmp, sizeof(buffer_tmp));
     LOG_GENESIS(EPOLL, "read: fd: %d, bytes_read: %d", fd, bytes_read);
     if (bytes_read == -1) {
@@ -876,12 +877,6 @@ namespace genesis_n {
   }
 
   ////////////////////////////////////////////////////////////////////////////////
-
-  void system_time_t::update_parameters() {
-    size_t time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    utils_t::parameters.time_ms = time_ms;
-  }
 
   void system_time_t::update(world_t& world) {
     size_t time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
