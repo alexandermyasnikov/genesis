@@ -84,12 +84,17 @@ namespace genesis_n {
     inline static std::string EPOLL = "epoll";
     inline static std::string STATS = "stats";
     inline static std::string ERROR = "error";
-    inline static std::string INFO  = "info ";
     inline static std::string DEBUG = "debug";
-    inline static std::string MIND  = "mind";
+    inline static std::string MIND  = "mind ";
+    inline static size_t npos       = std::string::npos;
 
     static double rand_double();
     static size_t rand_u64();
+    static size_t position(size_t position, size_t direction);
+    static std::pair<size_t, size_t> position_to_xy(size_t position);
+    static size_t position_from_xy(size_t x, size_t y);
+    static size_t n();
+    static size_t m();
     static void update_parameters(const std::string& name);
     static void rename(const std::string& name_old, const std::string& name_new);
     static void remove(const std::string& name);
@@ -253,6 +258,53 @@ namespace genesis_n {
     static std::mt19937 gen(seed);
     static std::uniform_int_distribution<size_t> dis;
     return dis(gen);
+  }
+
+  size_t utils_t::position(size_t position, size_t direction) {
+    direction = direction % 8;
+    LOG_GENESIS(DEBUG, "position: %zd", position);
+    LOG_GENESIS(DEBUG, "direction: %zd", direction);
+    auto [x, y] = position_to_xy(position);
+    ;
+    switch (direction) {
+      case 0: x--; y--; LOG_GENESIS(DEBUG, "LU"); break;
+      case 1:      y--; LOG_GENESIS(DEBUG, " U"); break;
+      case 2: x++; y--; LOG_GENESIS(DEBUG, "RU"); break;
+      case 3: x--;    ; LOG_GENESIS(DEBUG, "L "); break;
+      case 4: x++;    ; LOG_GENESIS(DEBUG, "R "); break;
+      case 5: x--; y++; LOG_GENESIS(DEBUG, "LD"); break;
+      case 6:      y++; LOG_GENESIS(DEBUG, " D"); break;
+      case 7: x++; y++; LOG_GENESIS(DEBUG, "RD"); break;
+      default: break;
+    }
+    size_t position_new = position_from_xy(x, y);
+    if (position_new != npos)
+      position = position_new;
+    LOG_GENESIS(DEBUG, "position new: %zd", position);
+    return position;
+  }
+
+  std::pair<size_t, size_t> utils_t::position_to_xy(size_t position) {
+    if (position > parameters.position_max)
+      return {npos, npos};
+    size_t x = position % parameters.position_n;
+    size_t y = position / parameters.position_n;
+    return {x, y};
+  }
+
+  size_t utils_t::position_from_xy(size_t x, size_t y) {
+    if (x >= n() || y >= m()) {
+      return npos;
+    }
+    return y * parameters.position_n + x;
+  }
+
+  size_t utils_t::n() {
+    return parameters.position_n;
+  }
+
+  size_t utils_t::m() {
+    return parameters.position_max / parameters.position_n;
   }
 
   void utils_t::update_parameters(const std::string& name) {
@@ -494,7 +546,6 @@ namespace genesis_n {
     stats.age_avg = stats.age_max / std::max(stats.bots_alive, 1UL);
 
     LOG_GENESIS(STATS, "stats.bots_alive: %zd", stats.bots_alive);
-    LOG_GENESIS(STATS, "stats.bots_alive: %zd", stats.bots_alive);
     LOG_GENESIS(STATS, "stats.age_max:    %zd", stats.age_max);
     LOG_GENESIS(STATS, "stats.age_avg:    %zd", stats.age_avg);
   }
@@ -518,7 +569,7 @@ namespace genesis_n {
   void system_bot_updater_t::update(world_t& world) {
     TRACE_GENESIS;
 
-    for (auto& bot : world.bots) {
+    for (auto bot : world.bots) { // copy
       if (!bot)
         continue;
 
@@ -537,7 +588,9 @@ namespace genesis_n {
 
       // TODO for (x : bot->energy_daily)
       if (!bot->energy || bot->energy < bot->energy_daily) {
-        bot.reset();
+        if (bot->position < world.bots.size()) {
+          world.bots[bot->position].reset();
+        }
         LOG_GENESIS(MIND, "DEAD");
         continue;
       }
@@ -559,37 +612,28 @@ namespace genesis_n {
       switch (cmd) {
         // RISC instructions:
         case 0: {
-          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()];
-          LOG_GENESIS(MIND, "BR <%d>", arg1);
-          bot->rip += arg1;
+          LOG_GENESIS(MIND, "NOP");
           break;
         } case 1: {
+          LOG_GENESIS(MIND, "RET");
+          bot->rip = 0;
+          break;
+        } case 2: {
+          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          LOG_GENESIS(MIND, "BR <%%%d>", arg1);
+          bot->rip += bot->regs[arg1];
+          break;
+        } case 3: {
           uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
           uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()];
           LOG_GENESIS(MIND, "SET <%%%d> <%d>", arg1, arg2);
           bot->regs[arg1] = arg2;
           break;
-        } case 2: {
+        } case 4: {
           uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
           uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
           LOG_GENESIS(MIND, "MOV <%%%d> = <%%%d>", arg1, arg2);
           bot->regs[arg1] = bot->regs[arg2];
-          break;
-        } case 3: {
-          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-          uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-          uint8_t arg3 = bot->code[(bot->rip++) % bot->code.size()];
-          uint8_t arg4 = bot->code[(bot->rip++) % bot->code.size()];
-          LOG_GENESIS(MIND, "IF > <%%%d> <%%%d> <%d> <%d>", arg1, arg2, arg3, arg4);
-          bot->rip += (bot->regs[arg1] > bot->regs[arg2]) ? arg3 : arg4;
-          break;
-        } case 4: {
-          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-          uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-          uint8_t arg3 = bot->code[(bot->rip++) % bot->code.size()];
-          uint8_t arg4 = bot->code[(bot->rip++) % bot->code.size()];
-          LOG_GENESIS(MIND, "IF < <%%%d> <%%%d> <%d> <%d>", arg1, arg2, arg3, arg4);
-          bot->rip += (bot->regs[arg1] < bot->regs[arg2]) ? arg3 : arg4;
           break;
         } case 5: {
           uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
@@ -598,15 +642,75 @@ namespace genesis_n {
           LOG_GENESIS(MIND, "ADD <%%%d> <%%%d> <%%%d>", arg1, arg2, arg3);
           bot->regs[arg1] = bot->regs[arg2] + bot->regs[arg3];
           break;
+        } case 6: {
+          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          uint8_t arg3 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          LOG_GENESIS(MIND, "SUB <%%%d> <%%%d> <%%%d>", arg1, arg2, arg3);
+          bot->regs[arg1] = bot->regs[arg2] - bot->regs[arg3];
+          break;
+        } case 7: {
+          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          uint8_t arg3 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          LOG_GENESIS(MIND, "MULT <%%%d> <%%%d> <%%%d>", arg1, arg2, arg3);
+          bot->regs[arg1] = bot->regs[arg2] * bot->regs[arg3];
+          break;
+        } case 8: {
+          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          uint8_t arg3 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          LOG_GENESIS(MIND, "DIV <%%%d> <%%%d> <%%%d>", arg1, arg2, arg3);
+          bot->regs[arg1] = bot->regs[arg2] / std::max(uint8_t(1), bot->regs[arg3]);
+          break;
+        } case 9: {
+          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          uint8_t arg3 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          LOG_GENESIS(MIND, "IF > <%%%d> <%%%d> <%%%d>", arg1, arg2, arg3);
+          if (bot->regs[arg1] > bot->regs[arg2])
+            bot->rip += bot->regs[arg3];
+          break;
+        } case 10: {
+          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          uint8_t arg3 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          LOG_GENESIS(MIND, "IF < <%%%d> <%%%d> <%%%d>", arg1, arg2, arg3);
+          if (bot->regs[arg1] < bot->regs[arg2])
+            bot->rip += bot->regs[arg3];
+          break;
 
           // Bot instructions:
         } case 32: {
-          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % 9;
-          LOG_GENESIS(MIND, "TODO MOVE <%d>", arg1);
+          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          LOG_GENESIS(MIND, "MOVE <%%%d>", arg1);
+          size_t position = utils_t::position(bot->position, arg1);
+          size_t energy_cost = 3;
+          if (position < world.bots.size() && !world.bots[position] && bot->energy > energy_cost) {
+            world.bots[position] = bot;
+            world.bots[bot->position].reset();
+            bot->position = position;
+            bot->energy -= energy_cost;
+          }
           break;
         } case 33: {
-          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % 9;
-          LOG_GENESIS(MIND, "TODO ATTACK <%d>", arg1);
+          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          LOG_GENESIS(MIND, "ATTACK <%%%d>", arg1);
+          size_t position = utils_t::position(bot->position, arg1);
+          size_t strength = utils_t::rand_u64() % 30;
+          size_t energy_cost = 10;
+          if (position < world.bots.size() && world.bots[position] && bot->energy > energy_cost) {
+            auto& bot_attacked = world.bots[position];
+            if (bot_attacked->energy < strength) {
+              bot->energy   = std::min(bot->energy   + bot_attacked->energy,   utils_t::parameters.bot_energy_max);
+              bot->mineral  = std::min(bot->mineral  + bot_attacked->mineral,  utils_t::parameters.bot_energy_max);
+              bot->sunlight = std::min(bot->sunlight + bot_attacked->sunlight, utils_t::parameters.bot_energy_max);
+              bot_attacked.reset();
+            } else {
+              bot_attacked->energy -= strength;
+            }
+            bot->energy -= energy_cost;
+          }
           break;
         } case 34: {
           uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
@@ -625,27 +729,77 @@ namespace genesis_n {
           break;
         } case 37: {
           LOG_GENESIS(MIND, "EXTRACT MINERAL");
-          bot->mineral = utils_t::parameters.bot_energy_max;
+          size_t energy_cost = 5;
+          if (bot->energy > energy_cost) {
+            bot->mineral = utils_t::parameters.bot_energy_max;
+            bot->energy -= energy_cost;
+          }
           break;
         } case 38: {
           LOG_GENESIS(MIND, "EXTRACT SUNLIGHT");
-          bot->sunlight = utils_t::parameters.bot_energy_max;
+          size_t energy_cost = 5;
+          if (bot->energy > energy_cost) {
+            bot->sunlight = utils_t::parameters.bot_energy_max;
+            bot->energy -= energy_cost;
+          }
           break;
         } case 39: {
           LOG_GENESIS(MIND, "CONVERT MINERAL");
-          bot->energy = (bot->energy + bot->mineral) % utils_t::parameters.bot_energy_max;
-          bot->mineral = 0;
+          size_t energy_cost = 5;
+          if (bot->energy > energy_cost) {
+            bot->energy = (bot->energy + bot->mineral) % utils_t::parameters.bot_energy_max;
+            bot->mineral = 0;
+            bot->energy -= energy_cost;
+          }
           break;
         } case 40: {
           LOG_GENESIS(MIND, "CONVERT SUNLIGHT");
-          bot->energy = (bot->energy + bot->sunlight) % utils_t::parameters.bot_energy_max;
-          bot->sunlight = 0;
+          size_t energy_cost = 5;
+          if (bot->energy > energy_cost) {
+            bot->energy = (bot->energy + bot->sunlight) % utils_t::parameters.bot_energy_max;
+            bot->sunlight = 0;
+            bot->energy -= energy_cost;
+          }
           break;
         } case 41: {
-          LOG_GENESIS(MIND, "TODO CLONE");
-          if (bot->energy > utils_t::parameters.bot_energy_max / 2) {
-            ;
-            // bot->energy -= utils_t::parameters.bot_energy_max / 2;
+          LOG_GENESIS(MIND, "CLONE");
+          size_t direction = utils_t::rand_u64() % 8;
+          size_t position = utils_t::position(bot->position, direction);
+          size_t energy_cost = 10 + utils_t::parameters.bot_energy_max / 4;
+          if (bot->energy > energy_cost && position < world.bots.size() && !world.bots[position]) {
+            auto bot_child = std::make_shared<bot_t>();
+            bot_child->code         = bot->code;
+            bot_child->regs         = bot->regs;
+            bot_child->interrupts   = bot->interrupts;
+            bot_child->name         = bot->name;
+            bot_child->position     = position;
+
+            bot->energy -= 10;
+
+            bot_child->energy       = bot->energy;   bot_child->energy   /= 2; bot->energy   /= 2;
+            bot_child->mineral      = bot->mineral;  bot_child->mineral  /= 2; bot->mineral  /= 2;
+            bot_child->sunlight     = bot->sunlight; bot_child->sunlight /= 2; bot->sunlight /= 2;
+
+            { // mutation
+              if (0 == utils_t::rand_u64() % 10) {
+                size_t ind = utils_t::rand_u64() % bot_child->code.size();
+                size_t val = utils_t::rand_u64() % 0xFF;
+                bot_child->code[ind] = val;
+              }
+              if (0 == utils_t::rand_u64() % 5) {
+                size_t ind = utils_t::rand_u64() % bot_child->regs.size();
+                size_t val = utils_t::rand_u64() % 0xFF;
+                bot_child->regs[ind] = val;
+              }
+              if (0 == utils_t::rand_u64() % 20) {
+                size_t ind = utils_t::rand_u64() % bot_child->interrupts.size();
+                size_t val = utils_t::rand_u64() % 0xFF;
+                bot_child->interrupts[ind] = val;
+              }
+            }
+
+            world.bots[position] = bot_child;
+
           }
           break;
         } default: {
@@ -762,7 +916,6 @@ namespace genesis_n {
       } else {
         process_write(event.data.fd);
       }
-
     }
   }
 
