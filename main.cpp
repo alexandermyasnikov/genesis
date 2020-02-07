@@ -557,99 +557,99 @@ namespace genesis_n {
       switch (cmd) {
         // RISC instructions:
         case 0: {
-                  uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()];
-                  LOG_GENESIS(DEBUG, "BR <%d>", arg1);
-                  bot->rip += arg1;
-                  break;
-                } case 1: {
-                  uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-                  uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()];
-                  LOG_GENESIS(DEBUG, "SET <%%%d> <%d>", arg1, arg2);
-                  bot->regs[arg1] = arg2;
-                  break;
-                } case 2: {
-                  uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-                  uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-                  LOG_GENESIS(DEBUG, "MOV <%%%d> = <%%%d>", arg1, arg2);
-                  bot->regs[arg1] = bot->regs[arg2];
-                  break;
-                } case 3: {
-                  uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-                  uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-                  uint8_t arg3 = bot->code[(bot->rip++) % bot->code.size()];
-                  uint8_t arg4 = bot->code[(bot->rip++) % bot->code.size()];
-                  LOG_GENESIS(DEBUG, "IF > <%%%d> <%%%d> <%d> <%d>", arg1, arg2, arg3, arg4);
-                  bot->rip += (bot->regs[arg1] > bot->regs[arg2]) ? arg3 : arg4;
-                  break;
-                } case 4: {
-                  uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-                  uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-                  uint8_t arg3 = bot->code[(bot->rip++) % bot->code.size()];
-                  uint8_t arg4 = bot->code[(bot->rip++) % bot->code.size()];
-                  LOG_GENESIS(DEBUG, "IF < <%%%d> <%%%d> <%d> <%d>", arg1, arg2, arg3, arg4);
-                  bot->rip += (bot->regs[arg1] < bot->regs[arg2]) ? arg3 : arg4;
-                  break;
-                } case 5: {
-                  uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-                  uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-                  uint8_t arg3 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-                  LOG_GENESIS(DEBUG, "ADD <%%%d> <%%%d> <%%%d>", arg1, arg2, arg3);
-                  bot->regs[arg1] = bot->regs[arg2] + bot->regs[arg3];
-                  break;
+          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()];
+          LOG_GENESIS(DEBUG, "BR <%d>", arg1);
+          bot->rip += arg1;
+          break;
+        } case 1: {
+          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()];
+          LOG_GENESIS(DEBUG, "SET <%%%d> <%d>", arg1, arg2);
+          bot->regs[arg1] = arg2;
+          break;
+        } case 2: {
+          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          LOG_GENESIS(DEBUG, "MOV <%%%d> = <%%%d>", arg1, arg2);
+          bot->regs[arg1] = bot->regs[arg2];
+          break;
+        } case 3: {
+          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          uint8_t arg3 = bot->code[(bot->rip++) % bot->code.size()];
+          uint8_t arg4 = bot->code[(bot->rip++) % bot->code.size()];
+          LOG_GENESIS(DEBUG, "IF > <%%%d> <%%%d> <%d> <%d>", arg1, arg2, arg3, arg4);
+          bot->rip += (bot->regs[arg1] > bot->regs[arg2]) ? arg3 : arg4;
+          break;
+        } case 4: {
+          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          uint8_t arg3 = bot->code[(bot->rip++) % bot->code.size()];
+          uint8_t arg4 = bot->code[(bot->rip++) % bot->code.size()];
+          LOG_GENESIS(DEBUG, "IF < <%%%d> <%%%d> <%d> <%d>", arg1, arg2, arg3, arg4);
+          bot->rip += (bot->regs[arg1] < bot->regs[arg2]) ? arg3 : arg4;
+          break;
+        } case 5: {
+          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          uint8_t arg2 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          uint8_t arg3 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          LOG_GENESIS(DEBUG, "ADD <%%%d> <%%%d> <%%%d>", arg1, arg2, arg3);
+          bot->regs[arg1] = bot->regs[arg2] + bot->regs[arg3];
+          break;
 
-                  // Bot instructions:
-                } case 32: {
-                  uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % 9;
-                  LOG_GENESIS(DEBUG, "TODO MOVE <%d>", arg1);
-                  break;
-                } case 33: {
-                  uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % 9;
-                  LOG_GENESIS(DEBUG, "TODO ATTACK <%d>", arg1);
-                  break;
-                } case 34: {
-                  uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-                  LOG_GENESIS(DEBUG, "GET MINERAL <%%%d>", arg1);
-                  bot->regs[arg1] = bot->mineral % 0xFF;
-                  break;
-                } case 35: {
-                  uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-                  LOG_GENESIS(DEBUG, "GET SUNLIGHT <%%%d>", arg1);
-                  bot->regs[arg1] = bot->sunlight % 0xFF;
-                  break;
-                } case 36: {
-                  uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
-                  LOG_GENESIS(DEBUG, "GET ENERGY <%%%d>", arg1);
-                  bot->regs[arg1] = bot->energy % 0xFF;
-                  break;
-                } case 37: {
-                  LOG_GENESIS(DEBUG, "EXTRACT MINERAL");
-                  bot->mineral = utils_t::parameters.bot_energy_max;
-                  break;
-                } case 38: {
-                  LOG_GENESIS(DEBUG, "EXTRACT SUNLIGHT");
-                  bot->sunlight = utils_t::parameters.bot_energy_max;
-                  break;
-                } case 39: {
-                  LOG_GENESIS(DEBUG, "CONVERT MINERAL");
-                  bot->energy = (bot->energy + bot->mineral) % utils_t::parameters.bot_energy_max;
-                  bot->mineral = 0;
-                  break;
-                } case 40: {
-                  LOG_GENESIS(DEBUG, "CONVERT SUNLIGHT");
-                  bot->energy = (bot->energy + bot->sunlight) % utils_t::parameters.bot_energy_max;
-                  bot->sunlight = 0;
-                  break;
-                } case 41: {
-                  LOG_GENESIS(DEBUG, "TODO CLONE");
-                  if (bot->energy > utils_t::parameters.bot_energy_max / 2) {
-                    ;
-                    // bot->energy -= utils_t::parameters.bot_energy_max / 2;
-                  }
-                  break;
-                } default: {
-                  /*NOTHING*/
-                  break;
-                }
+          // Bot instructions:
+        } case 32: {
+          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % 9;
+          LOG_GENESIS(DEBUG, "TODO MOVE <%d>", arg1);
+          break;
+        } case 33: {
+          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % 9;
+          LOG_GENESIS(DEBUG, "TODO ATTACK <%d>", arg1);
+          break;
+        } case 34: {
+          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          LOG_GENESIS(DEBUG, "GET MINERAL <%%%d>", arg1);
+          bot->regs[arg1] = bot->mineral % 0xFF;
+          break;
+        } case 35: {
+          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          LOG_GENESIS(DEBUG, "GET SUNLIGHT <%%%d>", arg1);
+          bot->regs[arg1] = bot->sunlight % 0xFF;
+          break;
+        } case 36: {
+          uint8_t arg1 = bot->code[(bot->rip++) % bot->code.size()] % bot->regs.size();
+          LOG_GENESIS(DEBUG, "GET ENERGY <%%%d>", arg1);
+          bot->regs[arg1] = bot->energy % 0xFF;
+          break;
+        } case 37: {
+          LOG_GENESIS(DEBUG, "EXTRACT MINERAL");
+          bot->mineral = utils_t::parameters.bot_energy_max;
+          break;
+        } case 38: {
+          LOG_GENESIS(DEBUG, "EXTRACT SUNLIGHT");
+          bot->sunlight = utils_t::parameters.bot_energy_max;
+          break;
+        } case 39: {
+          LOG_GENESIS(DEBUG, "CONVERT MINERAL");
+          bot->energy = (bot->energy + bot->mineral) % utils_t::parameters.bot_energy_max;
+          bot->mineral = 0;
+          break;
+        } case 40: {
+          LOG_GENESIS(DEBUG, "CONVERT SUNLIGHT");
+          bot->energy = (bot->energy + bot->sunlight) % utils_t::parameters.bot_energy_max;
+          bot->sunlight = 0;
+          break;
+        } case 41: {
+          LOG_GENESIS(DEBUG, "TODO CLONE");
+          if (bot->energy > utils_t::parameters.bot_energy_max / 2) {
+            ;
+            // bot->energy -= utils_t::parameters.bot_energy_max / 2;
+          }
+          break;
+        } default: {
+          /*NOTHING*/
+          break;
+        }
       }
       bot->age++;
     }
@@ -910,7 +910,6 @@ int main(int argc, char* argv[]) {
   while (true) {
     world.update();
   }
-
 
   return 0;
 }
