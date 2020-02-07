@@ -340,10 +340,10 @@ namespace genesis_n {
     }
     interrupts.resize(utils_t::parameters.bot_interrupts_size);
 
-    mineral        = std::min(mineral, utils_t::parameters.bot_energy_max);
-    sunlight       = std::min(mineral, utils_t::parameters.bot_energy_max);
-    energy         = std::min(mineral, utils_t::parameters.bot_energy_max);
-    energy_daily   = std::min(mineral, utils_t::parameters.bot_energy_daily);
+    mineral        = std::min(mineral,      utils_t::parameters.bot_energy_max);
+    sunlight       = std::min(sunlight,     utils_t::parameters.bot_energy_max);
+    energy         = std::min(energy,       utils_t::parameters.bot_energy_max);
+    energy_daily   = std::min(energy_daily, utils_t::parameters.bot_energy_daily);
   }
 
   bool bot_t::load(nlohmann::json& json) {
@@ -532,6 +532,9 @@ namespace genesis_n {
       LOG_GENESIS(DEBUG, "rip:          %zd", bot->rip);
       LOG_GENESIS(DEBUG, "age:          %zd", bot->age);
       LOG_GENESIS(DEBUG, "energy_daily: %zd", bot->energy_daily);
+
+      if (!bot->energy_daily)
+        continue;
 
       // TODO for (x : bot->energy_daily)
       if (!bot->energy || bot->energy < bot->energy_daily) {
