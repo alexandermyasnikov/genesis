@@ -62,6 +62,7 @@ namespace genesis_n {
     size_t   bot_energy_max           = 100;
     size_t   bot_energy_daily         = 1;
     size_t   system_min_bot_count     = position_max / 10;
+    size_t   system_interval_stats    = 1000;
     size_t   system_epoll_port        = 8282;
     size_t   time_ms                  = 0;
     size_t   interval_update_world_ms = 100;
@@ -86,6 +87,7 @@ namespace genesis_n {
     inline static std::string ERROR = "error";
     inline static std::string DEBUG = "debug";
     inline static std::string MIND  = "mind ";
+    inline static std::string TIME  = "time ";
     inline static size_t npos       = std::string::npos;
 
     static double rand_double();
@@ -107,9 +109,11 @@ namespace genesis_n {
   };
 
   struct stats_t {
-    size_t   bots_alive = 0;
-    size_t   age_max = 0;
-    size_t   age_avg = 0;
+    size_t   bots_alive   = 0;
+    size_t   age_max      = 0;
+    double   age_avg      = 0;
+    size_t   energy       = 0;
+    double   energy_avg   = 0;
   };
 
   struct bot_t {
@@ -152,6 +156,8 @@ namespace genesis_n {
   };
 
   struct system_bot_stats_t : system_t {
+    size_t time_update_stats_ms = 0;
+
     void update(world_t& world) override;
   };
 
@@ -198,8 +204,10 @@ namespace genesis_n {
 
   void parameters_t::load(nlohmann::json& json) {
     TRACE_GENESIS;
-    if (!json.is_object())
+    if (!json.is_object()) {
+      LOG_GENESIS(ERROR, "json is not object");
       return;
+    }
 
     JSON_LOAD(json, position_n);
     JSON_LOAD(json, position_max);
@@ -209,6 +217,7 @@ namespace genesis_n {
     JSON_LOAD(json, bot_energy_max);
     JSON_LOAD(json, bot_energy_daily);
     JSON_LOAD(json, system_min_bot_count);
+    JSON_LOAD(json, system_interval_stats);
     JSON_LOAD(json, system_epoll_port);
     JSON_LOAD(json, system_epoll_ip);
     JSON_LOAD(json, world_file);
@@ -224,8 +233,9 @@ namespace genesis_n {
 
   void parameters_t::save(nlohmann::json& json) {
     TRACE_GENESIS;
-    if (!json.is_object())
+    if (!json.is_object()) {
       json = nlohmann::json::object();
+    }
 
     JSON_SAVE(json, position_n);
     JSON_SAVE(json, position_max);
@@ -235,6 +245,7 @@ namespace genesis_n {
     JSON_SAVE(json, bot_energy_max);
     JSON_SAVE(json, bot_energy_daily);
     JSON_SAVE(json, system_min_bot_count);
+    JSON_SAVE(json, system_interval_stats);
     JSON_SAVE(json, system_epoll_port);
     JSON_SAVE(json, system_epoll_ip);
     JSON_SAVE(json, world_file);
@@ -310,7 +321,10 @@ namespace genesis_n {
   void utils_t::update_parameters(const std::string& name) {
     TRACE_GENESIS;
     nlohmann::json json;
-    utils_t::load(json, name);
+    if (!utils_t::load(json, name)) {
+      LOG_GENESIS(ERROR, "%s: can not load file", name.c_str());
+      return;
+    }
     parameters.load(json);
     json = {};
     parameters.save(json);
@@ -342,7 +356,7 @@ namespace genesis_n {
       file >> json;
       return true;
     } catch (const std::exception& e) {
-      LOG_GENESIS(ERROR, "%s", e.what());
+      LOG_GENESIS(ERROR, "%s: %s", name.c_str(), e.what());
     }
 
     std::string name_tmp = name + ".tmp";
@@ -351,7 +365,7 @@ namespace genesis_n {
       file >> json;
       return true;
     } catch (const std::exception& e) {
-      LOG_GENESIS(ERROR, "%s", e.what());
+      LOG_GENESIS(ERROR, "%s: %s", name.c_str(), e.what());
     }
     utils_t::remove(name_tmp);
     return false;
@@ -455,25 +469,35 @@ namespace genesis_n {
       system->update(*this);
     }
 
+    LOG_GENESIS(TIME, "time_ms: %zd", utils_t::parameters.time_ms);
+    LOG_GENESIS(TIME, "time_save_words_ms:      %zd", time_save_words_ms);
+    LOG_GENESIS(TIME, "time_load_parameters_ms: %zd", time_load_parameters_ms);
+    LOG_GENESIS(TIME, "time_update_world_ms:    %zd", time_update_world_ms);
+
     if (time_save_words_ms < utils_t::parameters.time_ms) {
+      LOG_GENESIS(TIME, "save");
       save();
       time_save_words_ms = utils_t::parameters.time_ms
         + utils_t::parameters.interval_save_world_ms;
     }
 
     if (time_load_parameters_ms < utils_t::parameters.time_ms) {
+      LOG_GENESIS(TIME, "update");
       utils_t::update_parameters(utils_t::parameters.parameters_file);
+      update_parameters();
       time_load_parameters_ms = utils_t::parameters.time_ms
         + utils_t::parameters.interval_load_parameters_ms;
     }
 
     if (time_update_world_ms > utils_t::parameters.time_ms) {
       size_t dt = time_update_world_ms - utils_t::parameters.time_ms;
-      LOG_GENESIS(DEBUG, "time: %zd %zd %zd", dt, utils_t::parameters.time_ms, time_update_world_ms);
+      LOG_GENESIS(TIME, "dt: %zd / %zd", dt, utils_t::parameters.interval_update_world_ms);
       std::this_thread::sleep_for(std::chrono::milliseconds(dt));
       time_update_world_ms = time_update_world_ms
         + utils_t::parameters.interval_update_world_ms;
     } else {
+      size_t dt = utils_t::parameters.time_ms- time_update_world_ms;
+      LOG_GENESIS(TIME, ">> dt: %zd / %zd", dt, utils_t::parameters.interval_update_world_ms);
       time_update_world_ms = utils_t::parameters.time_ms
         + utils_t::parameters.interval_update_world_ms;
     }
@@ -529,10 +553,22 @@ namespace genesis_n {
 
   void system_bot_stats_t::update(world_t& world) {
     TRACE_GENESIS;
+
+    if (time_update_stats_ms >= utils_t::parameters.time_ms) {
+      return;
+    }
+
+    LOG_GENESIS(STATS, "time_update_stats_ms: %zd", time_update_stats_ms);
+
+    time_update_stats_ms = utils_t::parameters.time_ms
+      + utils_t::parameters.system_interval_stats;
+
     auto& stats = world.stats;
     stats.bots_alive = 0;
     stats.age_max = 0;
     stats.age_avg = 0;
+    stats.energy = 0;
+    stats.energy_avg = 0;
 
     for (auto& bot : world.bots) {
       if (!bot)
@@ -541,13 +577,17 @@ namespace genesis_n {
       stats.bots_alive++;
       stats.age_max = std::max(bot->age, stats.age_max);
       stats.age_avg += bot->age;
+      stats.energy += bot->energy;
     }
 
-    stats.age_avg = stats.age_max / std::max(stats.bots_alive, 1UL);
+    stats.age_avg = 1. * stats.age_max / std::max(stats.bots_alive, 1UL);
+    stats.energy_avg = 1. * stats.energy / std::max(stats.bots_alive, 1UL);
 
     LOG_GENESIS(STATS, "stats.bots_alive: %zd", stats.bots_alive);
     LOG_GENESIS(STATS, "stats.age_max:    %zd", stats.age_max);
-    LOG_GENESIS(STATS, "stats.age_avg:    %zd", stats.age_avg);
+    LOG_GENESIS(STATS, "stats.age_avg:    %zd", (size_t) stats.age_avg);
+    LOG_GENESIS(STATS, "stats.energy:     %zd", stats.energy);
+    LOG_GENESIS(STATS, "stats.energy_avg: %zd", (size_t) stats.energy_avg);
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -556,10 +596,12 @@ namespace genesis_n {
     TRACE_GENESIS;
 
     if (world.stats.bots_alive < utils_t::parameters.system_min_bot_count) {
-      bot_t bot_new;
-      bot_new.update_parameters();
-      if (bot_new.position < world.bots.size() && !world.bots[bot_new.position]) {
-        world.bots[bot_new.position] = std::make_shared<bot_t>(bot_new);
+      /*for (size_t i{} ; i < utils_t::parameters.system_min_bot_count - world.stats.bots_alive; ++i)*/ {
+        bot_t bot_new;
+        bot_new.update_parameters();
+        if (bot_new.position < world.bots.size() && !world.bots[bot_new.position]) {
+          world.bots[bot_new.position] = std::make_shared<bot_t>(bot_new);
+        }
       }
     }
   }
@@ -707,6 +749,7 @@ namespace genesis_n {
               bot->sunlight = std::min(bot->sunlight + bot_attacked->sunlight, utils_t::parameters.bot_energy_max);
               bot_attacked.reset();
             } else {
+              bot->energy   = std::min(bot->energy + strength, utils_t::parameters.bot_energy_max);
               bot_attacked->energy -= strength;
             }
             bot->energy -= energy_cost;
@@ -781,21 +824,26 @@ namespace genesis_n {
             bot_child->sunlight     = bot->sunlight; bot_child->sunlight /= 2; bot->sunlight /= 2;
 
             { // mutation
-              if (0 == utils_t::rand_u64() % 10) {
+              bool mutation_code       = (0 == utils_t::rand_u64() % 20);
+              bool mutation_regs       = (0 == utils_t::rand_u64() % 20);
+              bool mutation_interrupts = (0 == utils_t::rand_u64() % 20);
+              if (mutation_code) {
                 size_t ind = utils_t::rand_u64() % bot_child->code.size();
                 size_t val = utils_t::rand_u64() % 0xFF;
                 bot_child->code[ind] = val;
               }
-              if (0 == utils_t::rand_u64() % 5) {
+              if (mutation_regs) {
                 size_t ind = utils_t::rand_u64() % bot_child->regs.size();
                 size_t val = utils_t::rand_u64() % 0xFF;
                 bot_child->regs[ind] = val;
               }
-              if (0 == utils_t::rand_u64() % 20) {
+              if (mutation_interrupts) {
                 size_t ind = utils_t::rand_u64() % bot_child->interrupts.size();
                 size_t val = utils_t::rand_u64() % 0xFF;
                 bot_child->interrupts[ind] = val;
               }
+              if (mutation_code || mutation_regs || mutation_regs)
+                bot_child->name = "r" + std::to_string(utils_t::rand_u64());
             }
 
             world.bots[position] = bot_child;
@@ -815,28 +863,36 @@ namespace genesis_n {
 
   void system_epoll_t::update_parameters() {
     TRACE_GENESIS;
+
+    if (is_run) // TODO reinit
+      return;
+
     is_run = false;
 
     if (fd_epoll = epoll_create1(0); fd_epoll < 0) {
       LOG_GENESIS(ERROR, "fd_epoll: %d", fd_epoll);
       close_all();
+      return;
     }
 
     if (fd_listen = socket(AF_INET, SOCK_STREAM, 0); fd_listen < 0) {
       LOG_GENESIS(ERROR, "fd_listen: %d", fd_listen);
       close_all();
+      return;
     }
 
     int on = 1;
     if (int ret = setsockopt(fd_listen, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)); ret < 0) {
       LOG_GENESIS(ERROR, "setsockopt(...): %d", ret);
       close_all();
+      return;
     }
 
     in_addr ip_addr = {0};
     if (int ret = inet_pton(AF_INET, utils_t::parameters.system_epoll_ip.c_str(), &ip_addr); ret < 0) {
       LOG_GENESIS(ERROR, "inet_pton(...): %d", ret);
       close_all();
+      return;
     }
 
     sockaddr_in addr;
@@ -848,19 +904,23 @@ namespace genesis_n {
     if (int ret = bind(fd_listen, (sockaddr *) &addr, sizeof(addr)); ret < 0) {
       LOG_GENESIS(ERROR, "bind(...): %d", ret);
       close_all();
+      return;
     }
 
     if (set_nonblock(fd_listen) < 0) {
       close_all();
+      return;
     }
 
     if (int ret = listen(fd_listen, SOMAXCONN); ret < 0) {
       LOG_GENESIS(ERROR, "listen(...): %d", ret);
       close_all();
+      return;
     }
 
     if (set_epoll_ctl(fd_listen, EPOLLIN, EPOLL_CTL_ADD) < 0) {
       close_all();
+      return;
     }
 
     is_run = true;
@@ -932,6 +992,8 @@ namespace genesis_n {
 
   void system_epoll_t::close_all() {
     TRACE_GENESIS;
+    close(fd_listen);
+    close(fd_epoll);
     for (auto& kv : buffers) {
       close(kv.first);
     }
