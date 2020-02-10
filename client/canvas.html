@@ -1,7 +1,7 @@
 <!doctype html>
 <html>
   <head>
-    <title>rectExample</title>
+    <title>Genesis</title>
     <meta charset='utf-8' />
     <style>
       #canvas {
@@ -32,6 +32,11 @@
         var scale = 0;
         var world;
         var bot_ind = -1;
+        var mode = "normal";
+
+        function mod(n, m) {
+          return ((n % m) + m) % m;
+        }
 
         var getJSON = function(url, callback) {
           var xhr = new XMLHttpRequest();
@@ -104,16 +109,33 @@
           for (const bot of world.bots) {
             let x = Math.floor(bot.position % parameters.position_n);
             let y = Math.floor(bot.position / parameters.position_n);
-            let r = bot.code[0];
-            let g = bot.code[1];
-            let b = bot.code[2];
+            const reducer_sum = (accumulator, currentValue) => accumulator + currentValue;
+            let color;
+            if (mode == "energy") {
+              let r = (255 * bot.energy / parameters.bot_energy_max) % 255;
+              let g = 0;
+              let b = 0;
+              color = "rgba("+r+","+g+","+b+", 0.8)";
+            } else if (mode == "name") {
+              const hash_code = s => s.split('').reduce((a,b) => (((a << 5) - a) + b.charCodeAt(0))|0, 0);
+              let r = mod(hash_code(bot.name), 255);
+              let g = 0;
+              let b = 0;
+              color = "rgba("+r+","+g+","+b+", 0.8)";
+              // console.log(bot.name, r);
+            } else {
+              let r = bot.code.reduce(reducer_sum) % 255;
+              let g = bot.regs.reduce(reducer_sum) % 255;
+              let b = bot.interrupts.reduce(reducer_sum) % 255;
+              color = "rgba("+r+","+g+","+b+", 0.8)";
+            }
 
             if (x >= x0 - 1
               && x <= x0 + h + 1
               && y >= y0 - 1
               && y <= y + h + 1)
             {
-              ctx.fillStyle = "rgba("+r+","+g+","+b+", 0.8)";
+              ctx.fillStyle = color;
               ctx.beginPath();
               ctx.arc(x + 0.5, y + 0.5, 0.5, 0, 2 * Math.PI);
               ctx.fill()
