@@ -62,6 +62,7 @@ namespace genesis_n {
     size_t   bot_energy_max           = 100;
     size_t   bot_energy_daily         = 1;
     size_t   system_min_bot_count     = position_max / 10;
+    size_t   system_max_bot_count     = position_max;
     size_t   system_interval_stats    = 1000;
     size_t   system_epoll_port        = 8282;
     size_t   time_ms                  = 0;
@@ -217,6 +218,7 @@ namespace genesis_n {
     JSON_LOAD(json, bot_energy_max);
     JSON_LOAD(json, bot_energy_daily);
     JSON_LOAD(json, system_min_bot_count);
+    JSON_LOAD(json, system_max_bot_count);
     JSON_LOAD(json, system_interval_stats);
     JSON_LOAD(json, system_epoll_port);
     JSON_LOAD(json, system_epoll_ip);
@@ -245,6 +247,7 @@ namespace genesis_n {
     JSON_SAVE(json, bot_energy_max);
     JSON_SAVE(json, bot_energy_daily);
     JSON_SAVE(json, system_min_bot_count);
+    JSON_SAVE(json, system_max_bot_count);
     JSON_SAVE(json, system_interval_stats);
     JSON_SAVE(json, system_epoll_port);
     JSON_SAVE(json, system_epoll_ip);
@@ -580,14 +583,28 @@ namespace genesis_n {
       stats.energy += bot->energy;
     }
 
-    stats.age_avg = 1. * stats.age_max / std::max(stats.bots_alive, 1UL);
+    stats.age_avg /= std::max(stats.bots_alive, 1UL);
     stats.energy_avg = 1. * stats.energy / std::max(stats.bots_alive, 1UL);
+
+    {
+      std::map<std::string, size_t> colonies;
+      for (auto& bot : world.bots) {
+        if (!bot)
+          continue;
+        colonies[bot->name]++;
+      }
+      for (const auto& kv : colonies) {
+        if (kv.second > utils_t::parameters.position_n) {
+          LOG_GENESIS(STATS, "colony: %s   %zd", kv.first.c_str(), kv.second);
+        }
+      }
+    }
 
     LOG_GENESIS(STATS, "stats.bots_alive: %zd", stats.bots_alive);
     LOG_GENESIS(STATS, "stats.age_max:    %zd", stats.age_max);
-    LOG_GENESIS(STATS, "stats.age_avg:    %zd", (size_t) stats.age_avg);
+    LOG_GENESIS(STATS, "stats.age_avg:    %f",  stats.age_avg);
     LOG_GENESIS(STATS, "stats.energy:     %zd", stats.energy);
-    LOG_GENESIS(STATS, "stats.energy_avg: %zd", (size_t) stats.energy_avg);
+    LOG_GENESIS(STATS, "stats.energy_avg: %f",  stats.energy_avg);
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -601,6 +618,37 @@ namespace genesis_n {
         bot_new.update_parameters();
         if (bot_new.position < world.bots.size() && !world.bots[bot_new.position]) {
           world.bots[bot_new.position] = std::make_shared<bot_t>(bot_new);
+        }
+      }
+    }
+
+    if (world.stats.bots_alive >= utils_t::parameters.system_max_bot_count) {
+      std::map<size_t, size_t> counts;
+      for (auto& bot : world.bots) {
+        if (!bot)
+          continue;
+        counts[bot->age]++;
+      }
+      size_t count = 0;
+      size_t age = 0;
+      for (auto it = counts.rbegin(); it != counts.rend(); ++it) {
+        if (count > utils_t::parameters.system_max_bot_count)
+          break;
+        count += it->second;
+        age = it->first;
+      }
+      LOG_GENESIS(DEBUG, "count:  %zd", count);
+      LOG_GENESIS(DEBUG, "age: %zd", age);
+      for (auto& bot : world.bots) {
+        if (!bot)
+          continue;
+        if (bot->age < age && (0 == utils_t::rand_u64() % 5)) {
+          bot.reset();
+        } else {
+          // bot->age = std::min(100UL, bot->age);
+          if (bot->age > 400) {
+            bot->age /= 2;
+          }
         }
       }
     }
@@ -824,9 +872,9 @@ namespace genesis_n {
             bot_child->sunlight     = bot->sunlight; bot_child->sunlight /= 2; bot->sunlight /= 2;
 
             { // mutation
-              bool mutation_code       = (0 == utils_t::rand_u64() % 20);
-              bool mutation_regs       = (0 == utils_t::rand_u64() % 20);
-              bool mutation_interrupts = (0 == utils_t::rand_u64() % 20);
+              bool mutation_code       = (0 == utils_t::rand_u64() % 100);
+              bool mutation_regs       = (0 == utils_t::rand_u64() % 100);
+              bool mutation_interrupts = (0 == utils_t::rand_u64() % 100);
               if (mutation_code) {
                 size_t ind = utils_t::rand_u64() % bot_child->code.size();
                 size_t val = utils_t::rand_u64() % 0xFF;
