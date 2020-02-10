@@ -1,4 +1,3 @@
-
 # GENESIS
 
 * Author: Alexander Myasnikov
@@ -8,9 +7,15 @@
 
 
 
-# Цель
+### Цель
 
 * Проверить, смогут ли боты приспособиться к окружающей среде при помощи генетических алгоритмов
+
+
+
+### Demo
+
+[![Demo](http://img.youtube.com/vi/umJeFR3tPzM/0.jpg)](http://www.youtube.com/watch?v=umJeFR3tPzM "Demo")
 
 
 
