@@ -64,6 +64,7 @@ namespace genesis_n {
   };
 
   struct utils_t {
+    inline static std::string CONFIG_PATH  = "config";
     inline static std::string TMP_PREFIX   = ".tmp";
     inline static std::string TRACE        = "trace";
     inline static std::string ARGS         = "args ";
@@ -85,7 +86,8 @@ namespace genesis_n {
   };
 
   struct config_t {
-    int         revision                         = 0;
+    int                       revision           = 0;
+    std::set<std::string>     debug              = { utils_t::ERROR };
 
     void load(nlohmann::json& json);
     void save(nlohmann::json& json);
@@ -93,7 +95,8 @@ namespace genesis_n {
 
   struct context_t {
     std::string               file_name        = "world.json";
-    std::set<std::string>     debug            = { utils_t::ERROR };
+
+    config_t   config;
 
     void load(nlohmann::json& json);
     void save(nlohmann::json& json);
@@ -114,6 +117,29 @@ namespace genesis_n {
 
   ////////////////////////////////////////////////////////////////////////////////
 
+  void config_t::load(nlohmann::json& json) {
+    TRACE_GENESIS;
+
+    if (!json.is_object()) {
+      LOG_GENESIS(ERROR, "json is not object");
+      return;
+    }
+
+    JSON_LOAD(json, debug);
+  }
+
+  void config_t::save(nlohmann::json& json) {
+    TRACE_GENESIS;
+
+    if (!json.is_object()) {
+      json = nlohmann::json::object();
+    }
+
+    JSON_SAVE(json, debug);
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
   void context_t::load(nlohmann::json& json) {
     TRACE_GENESIS;
 
@@ -123,7 +149,7 @@ namespace genesis_n {
     }
 
     // JSON_LOAD(json, file_name);
-    JSON_LOAD(json, debug);
+    config.load(json[utils_t::CONFIG_PATH]);
   }
 
   void context_t::save(nlohmann::json& json) {
@@ -134,7 +160,7 @@ namespace genesis_n {
     }
 
     JSON_SAVE(json, file_name);
-    JSON_SAVE(json, debug);
+    config.save(json[utils_t::CONFIG_PATH]);
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -213,7 +239,7 @@ namespace genesis_n {
   void world_t::init() {
     TRACE_GENESIS;
     load();
-    utils_t::debug = ctx.debug;
+    utils_t::debug = ctx.config.debug;
     save();
   }
 
@@ -222,6 +248,7 @@ namespace genesis_n {
     nlohmann::json json;
     if (!utils_t::load(json, ctx.file_name)) {
       LOG_GENESIS(ERROR, "%s: can not load file", ctx.file_name.c_str());
+      return;
     }
     ctx.load(json);
   }

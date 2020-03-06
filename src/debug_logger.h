@@ -74,15 +74,17 @@ namespace debug_logger_n {
     }
 
     static void log(const ctx_t& ctx, const char* format, ...) {
-      fprintf(ctx.stream, "%s %d    %*s#%d    ",
-          ctx.name, ctx.indent / 2, ctx.indent, "", ctx.line);
+      if (ctx.cond) {
+        fprintf(ctx.stream, "%s %d    %*s#%d    ",
+            ctx.name, ctx.indent / 2, ctx.indent, "", ctx.line);
 
-      va_list args;
-      va_start(args, format);
-      vfprintf(ctx.stream, format, args);
-      va_end(args);
-      fprintf(ctx.stream, "\n");
-      fflush(ctx.stream);
+        va_list args;
+        va_start(args, format);
+        vfprintf(ctx.stream, format, args);
+        va_end(args);
+        fprintf(ctx.stream, "\n");
+        fflush(ctx.stream);
+      }
     }
 
     ctx_t _ctx;
