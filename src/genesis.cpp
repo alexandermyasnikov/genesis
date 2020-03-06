@@ -23,26 +23,31 @@
 #include "debug_logger.h"
 
 
+#define PRODUCTION 0
 
 #define JSON_SAVE(json, name) json[#name] = name
 #define JSON_LOAD(json, name) name = json.value(#name, name)
 
-#define TRACE_GENESIS {   \
-  if (utils_t::debug.contains(utils_t::TRACE)) {   \
-    DEBUG_LOGGER(utils_t::TRACE.c_str(), logger_indent_genesis_t::indent);   \
-  }   \
-}
-#define LOG_GENESIS(name, ...) {   \
-  if (utils_t::debug.contains(utils_t::name)) {   \
-    DEBUG_LOG(utils_t::name.c_str(), logger_indent_genesis_t::indent, __VA_ARGS__);   \
-  }   \
-}
+#if PRODUCTION
+  #define TRACE_GENESIS
+  #define LOG_GENESIS(name, ...)
+#else
+  #define TRACE_GENESIS   \
+    DEBUG_LOGGER(utils_t::TRACE.c_str(),   \
+        logger_indent_genesis_t::indent,   \
+        utils_t::debug.contains(utils_t::TRACE))
+  #define LOG_GENESIS(name, ...)   \
+    DEBUG_LOG(utils_t::name.c_str(),   \
+        logger_indent_genesis_t::indent,   \
+        utils_t::debug.contains(utils_t::name),   \
+        __VA_ARGS__)
+#endif
 
 
 
 using namespace std::chrono_literals;
 
-struct logger_indent_genesis_t   : logger_indent_t<logger_indent_genesis_t> { };
+struct logger_indent_genesis_t   : debug_logger_n::indent_t<logger_indent_genesis_t> { };
 
 
 
@@ -69,7 +74,7 @@ namespace genesis_n {
     inline static size_t npos              = std::string::npos;
 
     inline static size_t seed = time(0);
-    inline static std::set<std::string> debug = { ERROR }; // XXX
+    inline static std::set<std::string> debug = { ERROR };
 
     static void rename(const std::string& name_old, const std::string& name_new);
     static void remove(const std::string& name);
@@ -78,6 +83,10 @@ namespace genesis_n {
   };
 
   struct config_t {
+    int         revision                         = 0;
+
+    void load(nlohmann::json& json);
+    void save(nlohmann::json& json);
   };
 
   struct context_t {
@@ -237,6 +246,12 @@ namespace genesis_n {
     utils_t::save(json, ctx.file_name);
 
     utils_t::debug = ctx.debug;
+    {
+      TRACE_GENESIS;
+      {
+        TRACE_GENESIS;
+      }
+    }
   }
 
   void world_t::save() {
@@ -259,6 +274,11 @@ int main(int argc, char* argv[]) {
 
   std::error_code ec;
   std::string file_name = std::filesystem::absolute(argv[1], ec);
+
+  if (ec) {
+    std::cerr << "invalid path: " << ec.message().c_str() << std::endl;
+    return -1;
+  }
 
   using namespace genesis_n;
 
