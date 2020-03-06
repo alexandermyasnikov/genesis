@@ -23,6 +23,7 @@
 #include "debug_logger.h"
 
 
+
 #define PRODUCTION 0
 
 #define JSON_SAVE(json, name) json[#name] = name
@@ -65,6 +66,7 @@ namespace genesis_n {
   struct utils_t {
     inline static std::string TMP_PREFIX   = ".tmp";
     inline static std::string TRACE        = "trace";
+    inline static std::string ARGS         = "args ";
     inline static std::string EPOLL        = "epoll";
     inline static std::string STATS        = "stats";
     inline static std::string ERROR        = "error";
@@ -97,35 +99,6 @@ namespace genesis_n {
     void save(nlohmann::json& json);
   };
 
-#if 0
-  struct prop_t {
-    uint32_t      min;
-    uint32_t      max;
-    uint32_t      id;
-    std::string   name;
-  };
-
-  struct prop_wrapper_t {
-    uint32_t&       value;
-    const prop_t&   prop;
-
-    prop_wrapper_t(uint32_t& value, const prop_t& prop) : value(value), prop(prop) { }
-    uint32_t get_value() {
-      value = prop.min + value % (prop.max + 1 - prop.min);
-      return value;
-    }
-    uint32_t max_size() {
-      return prop.max - get_value();
-    }
-    bool can_inc(uint32_t delta) {
-      return delta < max_size();
-    }
-    void inc(uint32_t delta) {
-      value += std::min(max_size(), delta);
-    }
-  };
-#endif
-
   struct http_parser_t {
     ;
   };
@@ -134,6 +107,7 @@ namespace genesis_n {
     context_t   ctx;
 
     void update();
+    void init();
     void load();
     void save();
   };
@@ -167,6 +141,8 @@ namespace genesis_n {
 
   void utils_t::rename(const std::string& name_old, const std::string& name_new) {
     TRACE_GENESIS;
+    LOG_GENESIS(ARGS, "name_old: %s", name_old.c_str());
+    LOG_GENESIS(ARGS, "name_new: %s", name_new.c_str());
 
     std::error_code ec;
     std::filesystem::rename(name_old, name_new, ec);
@@ -177,6 +153,7 @@ namespace genesis_n {
 
   void utils_t::remove(const std::string& name) {
     TRACE_GENESIS;
+    LOG_GENESIS(ARGS, "name: %s", name.c_str());
 
     std::error_code ec;
     std::filesystem::remove(name, ec);
@@ -187,6 +164,7 @@ namespace genesis_n {
 
   bool utils_t::load(nlohmann::json& json, const std::string& name) {
     TRACE_GENESIS;
+    LOG_GENESIS(ARGS, "name: %s", name.c_str());
 
     try {
       std::ifstream file(name);
@@ -210,6 +188,7 @@ namespace genesis_n {
 
   bool utils_t::save(const nlohmann::json& json, const std::string& name) {
     TRACE_GENESIS;
+    LOG_GENESIS(ARGS, "name: %s", name.c_str());
 
     std::string name_tmp = name + TMP_PREFIX;
     try {
@@ -231,32 +210,27 @@ namespace genesis_n {
     TRACE_GENESIS;
   }
 
+  void world_t::init() {
+    TRACE_GENESIS;
+    load();
+    utils_t::debug = ctx.debug;
+    save();
+  }
+
   void world_t::load() {
     TRACE_GENESIS;
-
     nlohmann::json json;
     if (!utils_t::load(json, ctx.file_name)) {
       LOG_GENESIS(ERROR, "%s: can not load file", ctx.file_name.c_str());
     }
-
     ctx.load(json);
-    json = {};
-
-    ctx.save(json);
-    utils_t::save(json, ctx.file_name);
-
-    utils_t::debug = ctx.debug;
-    {
-      TRACE_GENESIS;
-      {
-        TRACE_GENESIS;
-      }
-    }
   }
 
   void world_t::save() {
     TRACE_GENESIS;
     nlohmann::json json;
+    ctx.save(json);
+    utils_t::save(json, ctx.file_name);
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -284,7 +258,7 @@ int main(int argc, char* argv[]) {
 
   world_t world;
   world.ctx.file_name = file_name;
-  world.load();
+  world.init();
 
   while (true) {
     world.update();

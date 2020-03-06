@@ -50,18 +50,21 @@ namespace debug_logger_n {
 
   struct logger_t {
     logger_t(const ctx_t& ctx) : _ctx(ctx) {
-      _ctx.time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+      _ctx.time = std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::system_clock::now().time_since_epoch()).count();
       if (_ctx.cond) {
         fprintf(_ctx.stream, "%s %d    %*s#%d --> %s\n",
-            _ctx.name, _ctx.indent / 2, _ctx.indent, "", _ctx.line, _ctx.function);
+            _ctx.name, _ctx.indent / 2,
+            _ctx.indent, "", _ctx.line, _ctx.function);
         fflush(_ctx.stream);
       }
       _ctx.indent += 2;
     }
 
-    ~logger_t( ) {
+    ~logger_t() {
       _ctx.indent -= 2;
-      _ctx.time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - _ctx.time;
+      _ctx.time = std::chrono::duration_cast<std::chrono::milliseconds>(
+           std::chrono::system_clock::now().time_since_epoch()).count() - _ctx.time;
       if (_ctx.cond) {
         fprintf(_ctx.stream, "%s %d %c  %*s# <-- %s %ldms\n",
             _ctx.name, _ctx.indent / 2, std::uncaught_exceptions() ? '*' : ' ',
