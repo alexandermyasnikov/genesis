@@ -1,4 +1,4 @@
 
 all:
-	g++ -std=c++2a -o genesis main.cpp -O0
+	g++ -std=c++2a -o genesis src/genesis.cpp -O0
 
