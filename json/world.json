@@ -1,0 +1,144 @@
+{
+  "bacterias": [
+    {
+      "code": [
+        145,
+        174,
+        168,
+        180,
+        156,
+        41,
+        188,
+        100,
+        84,
+        237,
+        79,
+        21,
+        149,
+        9,
+        96,
+        80,
+        67,
+        31,
+        24,
+        2,
+        215,
+        13,
+        10,
+        217,
+        231,
+        116,
+        3,
+        109,
+        77,
+        58,
+        54,
+        66
+      ],
+      "pos": 12,
+      "rip": 0
+    },
+    {
+      "code": [
+        161,
+        245,
+        113,
+        55,
+        193,
+        129,
+        74,
+        233,
+        132,
+        61,
+        182,
+        52,
+        5,
+        103,
+        57,
+        92,
+        202,
+        95,
+        89,
+        42,
+        194,
+        209,
+        4,
+        157,
+        197,
+        94,
+        25,
+        188,
+        79,
+        215,
+        114,
+        52
+      ],
+      "pos": 13,
+      "rip": 0
+    }
+  ],
+  "cells": null,
+  "config": {
+    "areas": [
+      {
+        "coef": 100.0,
+        "mean": 15.0,
+        "name": "sun_area",
+        "radius": 0.1,
+        "resource": "energy",
+        "sigma": 10.0,
+        "x0": 10,
+        "x1": 20,
+        "y0": 5,
+        "y1": 15
+      }
+    ],
+    "code_size": 32,
+    "debug": [
+      "args ",
+      "debug",
+      "error",
+      "trace"
+    ],
+    "position_max": 400,
+    "position_n": 20,
+    "recipes": [
+      {
+        "id": 1,
+        "in": [
+          {
+            "count": 30,
+            "name": "water"
+          },
+          {
+            "count": 10,
+            "name": "energy"
+          }
+        ],
+        "name": "energy_water_to_energy",
+        "out": [
+          {
+            "count": 150,
+            "name": "energy"
+          }
+        ]
+      }
+    ],
+    "resources": [
+      {
+        "id": 1,
+        "name": "energy"
+      },
+      {
+        "id": 2,
+        "name": "mineral"
+      },
+      {
+        "id": 3,
+        "name": "water"
+      }
+    ],
+    "revision": 0
+  },
+  "file_name": "/mnt/code/cpp/genesis/json/world.json"
+}
