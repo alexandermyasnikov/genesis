@@ -9,7 +9,7 @@
       .indent=_indent,   \
       .name=_name,   \
       .file=__FILE__,   \
-      .function=__FUNCTION__,   \
+      .function=__PRETTY_FUNCTION__,   \
       .line=__LINE__,   \
       .stream=stderr,   \
       .cond=_cond,   \

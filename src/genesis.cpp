@@ -72,7 +72,11 @@ namespace genesis_n {
     inline static size_t npos                  = std::string::npos;
 
     inline static size_t seed = time(0);
+#if PRODUCTION
     inline static std::set<std::string> debug = { ERROR };
+#else
+    inline static std::set<std::string> debug = { utils_t::ERROR, utils_t::DEBUG, utils_t::TRACE, utils_t::ARGS };
+#endif
 
     static void rename(const std::string& name_old, const std::string& name_new);
     static void remove(const std::string& name);
@@ -363,16 +367,20 @@ namespace genesis_n {
 
     JSON_SAVE(json, file_name);
     config.save(json[utils_t::CONFIG_PATH]);
-    for (size_t i{}; i < cells.size(); ++i) {
-      cells[i].save(json[utils_t::CELLS_PATH][i]);
+
+    auto& cells_json = json[utils_t::CELLS_PATH];
+    for (const auto& cell : cells) {
+      if (cell.type) {
+        cells_json.push_back({});
+        cell.save(cells_json.back());
+      }
     }
-    {
-      size_t i{};
-      for (const auto& [_, bacteria] : bacterias) {
-        if (bacteria) {
-          bacteria->save(json[utils_t::BACTERIAS_PATH][i]);
-        }
-        i++;
+
+    auto& bacterias_json = json[utils_t::BACTERIAS_PATH];
+    for (const auto& [_, bacteria] : bacterias) {
+      if (bacteria) {
+        bacterias_json.push_back({});
+        bacteria->save(bacterias_json.back());
       }
     }
   }
@@ -464,6 +472,7 @@ namespace genesis_n {
     { // XXX
       auto bacteria = std::make_shared<bacteria_t>();
       bacteria->pos = 12;
+      bacteria->validation(ctx.config);
       ctx.bacterias[bacteria->pos] = bacteria;
     }
   }
