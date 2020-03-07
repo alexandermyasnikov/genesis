@@ -1,3 +1,4 @@
+
 # GENESIS
 
 * Author: Alexander Myasnikov
@@ -9,7 +10,7 @@
 
 ### Цель
 
-* Смоделировать игру Labyrinth (paper-and-pencil game) с самообучением
+* Моделирование жизни
 
 
 
@@ -19,81 +20,41 @@
 
 
 
-### Bot
+### Cell
 
-* Memory
-  * code: [u8]
-  * registers_global: (ip:u32, frame:u32, registers:[u32])
-  * interrupts: [(id:u32, ip:u32, arg1:u32, arg2:u32, arg3:u32)]
-  * stack: [(ip:u32, arg1:u32, arg2:u32, arg3:u32, registers:[u32])]
-* Properpy
-  * value
-  * min
-  * max
+* properpies
   * id
-  * name
-* Properpies: vector<prop_t>
   * age
-  * experience
   * health
-  * energy_step
-  * inventory
-    * hit
-    * shot
-  * // direction
-* Interrupts
-  * MSG
-  * BOT_NEAR
-  * ITEM_NEAR
-  * PROP_CHANGE <id> <min> <max>
-* Events
-  * MSG <id> <arg1> <arg2> <arg3>
-  * BOT_NEAR <direction> <distance>
-  * ITEM_NEAR <direction> <distance>
-  * PROP_CHANGE <id>
-* Commands
-  * MOVE_REL <direction>
-  * MOVE_ABS <direction>
-  * ATTACK <type> <direction>
-  * GET_PROP <id> <res>
-  * MUTATION
-  * TILE_INFO <direction> <res>
-  * MSG <id> <arg1> <arg2> <arg3>
-* Commands RISC
-  * NOP
-  * RET
-  * BR   <offset>
-  * SET  <dst> <value>
-  * MOV  <dst> <src>
-  * ADD  <dst> <src1> <src2>
-  * SUB  <dst> <src1> <src2>
-  * MULT <dst> <src1> <src2>
-  * DIV  <dst> <src1> <src2>
-  * IF   <op>  <src1> <src2> <offset>
-  * SYSCALL <id> <arg1> <arg2> <arg3>
-    * <rand> <dst>
-    * <time> <dst>
+  * experience
+  * [resource]
+* type
+  * extractor
+    * Пытается добыть ресурс
+    * area: y = radius * min(0, -1 + |(x - mean) / sigma| ^ 2)
+  * resource_producer
+    * При накоплении нужного количества ресурсов создается другой ресурс
+  * spore
+    * При накоплении нужного количества ресурсов создается бактерия
+  * defender
+    * При обнаружении вражеских клеток наносит им урон
+  * transfer
+* cell_pipe
+  * velocity
+  * resource_index
 
 
 
-# Item
+### bacteria
 
-* Type
-  * Portal
-  * Wall
-  * Trap
-  * First_aid_kit
-  * Ammunition
-* impassable
+* memory
+  * code: [u8]
+  * // registers_global: (ip:u32, frame:u32, registers:[u32])
+  * // interrupts: [(id:u32, ip:u32, arg1:u32, arg2:u32, arg3:u32)]
+  * // stack: [(ip:u32, arg1:u32, arg2:u32, arg3:u32, registers:[u32])]
+* command
+  * todo
 
-
-
-### World
-
-* std::vector<event_t>
-* std::vector<std::variant<bot_t, item_t>>
-* system_t::update(world_t& world)
-* system_bot_t::update(bot_t& bot)
 
 
 
@@ -102,15 +63,50 @@
 ```
 {
   "config": {
-   "position_n": 10,
-   "position_max": 100,
-   "properpies": [
-   ],
-   "debug": [
-     "error"
-   ]
+    "position_n": 10,
+    "position_max": 100,
+    "resources": [
+      {
+        "id": 1,
+        "name": "energy"
+      },
+      {
+        "id": 2,
+        "name": "water"
+      }
+    ],
+    "areas": [
+      {
+        "name": "sun_area",
+        "resource": "energy",
+        "x0": 10,
+        "x1": 20,
+        "y0": 5,
+        "y1": 15,
+        "mean": 15,
+        "sigma": 10,
+        "probability": 0.1,
+        "coef": 100
+      }
+    ],
+    "recipes": [
+      {
+        "id": 1,
+        "name": "energy_water_to_energy",
+        "in": [
+          ["energy", 20],
+          ["water", 20]
+        ],
+        "out": [
+          ["energy", 100]
+        ]
+      }
+    ],
+    "debug": [
+      "error"
+    ]
   },
-  "bots": [
+  "cells": [
   ],
   "items": [
   ],
@@ -118,5 +114,6 @@
   ]
 }
 ```
+
 
 
