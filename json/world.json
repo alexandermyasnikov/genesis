@@ -21,87 +21,46 @@
       ],
       "pos": 11,
       "rip": 0
-    },
-    {
-      "code": [
-        145,
-        174,
-        168,
-        180,
-        156,
-        41,
-        188,
-        100,
-        84,
-        237,
-        79,
-        21,
-        149,
-        9,
-        96,
-        80
-      ],
-      "pos": 12,
-      "rip": 0
-    },
-    {
-      "code": [
-        14,
-        69,
-        82,
-        184,
-        143,
-        135,
-        150,
-        192,
-        82,
-        120,
-        106,
-        237,
-        143,
-        174,
-        186,
-        37
-      ],
-      "pos": 13,
-      "rip": 0
     }
   ],
   "cells": [
     {
-      "age": 0,
-      "pipes": [
-        {
+      "age": 2480,
+      "pipes": {
+        "water": {
           "direction": "LN",
           "resource": "water",
           "velocity": 1
         }
-      ],
+      },
       "pos": 7,
       "recipes": [
+        "energy_loss",
         "sun_energy"
       ],
-      "resources": [
-        {
-          "name": "energy",
-          "value": 11
+      "resources": {
+        "energy": {
+          "count": 1000,
+          "name": "energy"
         }
-      ],
+      },
       "type": "extractor"
     }
   ],
   "config": {
-    "areas": [
-      {
-        "factor": 1.0,
-        "name": "sun_area",
-        "radius": 10,
-        "resource": "energy",
-        "sigma": 2.0,
-        "x": 10,
-        "y": 15
-      }
-    ],
+    "areas": {
+      "energy": [
+        {
+          "factor": 1.0,
+          "name": "sun_area",
+          "radius": 10,
+          "resource": "energy",
+          "sigma": 2.0,
+          "x": 10,
+          "y": 15
+        }
+      ]
+    },
     "code_size": 16,
     "debug": [
       "args ",
@@ -111,56 +70,66 @@
     ],
     "position_max": 400,
     "position_n": 20,
-    "recipes": [
-      {
-        "in": [
-          {
+    "recipes": {
+      "energy_loss": {
+        "in": {
+          "energy": {
             "count": 1,
             "name": "energy"
           }
-        ],
-        "name": "sun_energy",
-        "out": [
-          {
-            "count": 100,
-            "name": "energy"
-          }
-        ]
+        },
+        "name": "energy_loss",
+        "out": {}
       },
-      {
-        "in": [
-          {
+      "energy_water_to_energy": {
+        "in": {
+          "energy": {
             "count": 10,
             "name": "energy"
           },
-          {
+          "water": {
             "count": 30,
             "name": "water"
           }
-        ],
+        },
         "name": "energy_water_to_energy",
-        "out": [
-          {
+        "out": {
+          "energy": {
             "count": 150,
             "name": "energy"
           }
-        ]
+        }
+      },
+      "sun_energy": {
+        "in": {
+          "energy": {
+            "count": 1,
+            "name": "energy"
+          }
+        },
+        "name": "sun_energy",
+        "out": {
+          "energy": {
+            "count": 10,
+            "name": "energy"
+          }
+        }
       }
-    ],
-    "resources": [
-      {
+    },
+    "resources": {
+      "energy": {
         "name": "energy",
-        "stack_size": 100
+        "stack_size": 1000
       },
-      {
-        "name": "water",
-        "stack_size": 100
-      },
-      {
+      "mineral": {
         "name": "mineral",
-        "stack_size": 100
+        "stack_size": 1000
+      },
+      "water": {
+        "name": "water",
+        "stack_size": 1000
       }
-    ],
+    },
     "revision": 0
   }
 }

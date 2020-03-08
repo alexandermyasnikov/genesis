@@ -149,8 +149,8 @@ namespace genesis_n {
   };
 
   struct recipe_t {
-    using in_t  = std::vector<recipe_item_t>;
-    using out_t = std::vector<recipe_item_t>;
+    using in_t  = std::map<std::string/*name*/, recipe_item_t>;
+    using out_t = std::map<std::string/*name*/, recipe_item_t>;
 
     std::string   name              = {};
     in_t          in                = {};
@@ -169,14 +169,14 @@ namespace genesis_n {
 
   struct resource_t {
     std::string   name    = {};
-    uint64_t      value   = utils_t::npos;
+    uint64_t      count   = utils_t::npos;
 
     bool validation(const config_t& config);
   };
 
   struct cell_t {
-    using resources_t   = std::vector<resource_t>;
-    using pipes_t       = std::vector<cell_pipe_t>;
+    using resources_t   = std::map<std::string/*name*/,     resource_t>;
+    using pipes_t       = std::map<std::string/*resource*/, cell_pipe_t>;
     using recipes_t     = std::set<std::string>;
 
     uint64_t      pos              = utils_t::npos;
@@ -191,9 +191,9 @@ namespace genesis_n {
 
   struct config_t {
     using debug_t       = std::set<std::string>;
-    using resources_t   = std::vector<resource_info_t>;
-    using areas_t       = std::vector<area_t>;
-    using recipes_t     = std::vector<recipe_t>;
+    using resources_t   = std::map<std::string/*name*/,     resource_info_t>;
+    using areas_t       = std::map<std::string/*resource*/, std::vector<area_t>>;
+    using recipes_t     = std::map<std::string/*name*/,     recipe_t>;
 
     uint64_t      revision           = 0;
     uint64_t      position_n         = 20;
@@ -219,8 +219,8 @@ namespace genesis_n {
   };
 
   struct context_t {
-    using cells_t = std::map<size_t/*pos*/, cell_t>;
-    using bacterias_t = std::map<size_t/*pos*/, bacteria_sptr_t>;
+    using cells_t       = std::map<size_t/*pos*/, cell_t>;
+    using bacterias_t   = std::map<size_t/*pos*/, bacteria_sptr_t>;
 
     cells_t       cells            = {};
     bacterias_t   bacterias        = {};
@@ -238,6 +238,8 @@ namespace genesis_n {
     std::string      file_name;
 
     void update();
+    void update_cell_total(cell_t& cell);
+    void update_cell_producer(cell_t& cell);
     void init();
     void load();
     void save();
@@ -308,13 +310,13 @@ namespace genesis_n {
   inline void to_json(nlohmann::json& json, const resource_t& resource) {
     TRACE_GENESIS;
     JSON_SAVE2(json, resource, name);
-    JSON_SAVE2(json, resource, value);
+    JSON_SAVE2(json, resource, count);
   }
 
   inline void from_json(const nlohmann::json& json, resource_t& resource) {
     TRACE_GENESIS;
     JSON_LOAD2(json, resource, name);
-    JSON_LOAD2(json, resource, value);
+    JSON_LOAD2(json, resource, count);
   }
 
   inline void to_json(nlohmann::json& json, const cell_pipe_t& cell_pipe) {
@@ -458,25 +460,22 @@ namespace genesis_n {
       return false;
     }
 
-    for (auto& resource : resources) {
-      if (!resource.validation(config)) {
+    for (auto& [key, resource] : resources) {
+      if (key != resource.name || !resource.validation(config)) {
         LOG_GENESIS(ERROR, "invalid cell_t::resources");
         return false;
       }
     }
 
-    for (auto& pipe : pipes) {
-      if (!pipe.validation(config)) {
+    for (auto& [key, pipe] : pipes) {
+      if (key != pipe.resource || !pipe.validation(config)) {
         LOG_GENESIS(ERROR, "invalid cell_t::pipes");
         return false;
       }
     }
 
     for (auto& recipe_name : recipes) {
-      if (std::find_if(config.recipes.begin(), config.recipes.end(),
-            [recipe_name] (const auto& recipe) { return recipe.name == recipe_name; })
-          == config.recipes.end())
-      {
+      if (!config.recipes.contains(recipe_name)) {
         LOG_GENESIS(ERROR, "invalid cell_t::recipes %s", recipe_name.c_str());
         return false;
       }
@@ -495,10 +494,7 @@ namespace genesis_n {
       return false;
     }
 
-    if (std::find_if(config.resources.begin(), config.resources.end(),
-          [this] (const auto& resource_info) { return resource_info.name == resource; })
-        == config.resources.end())
-    {
+    if (!config.resources.contains(resource)) {
       LOG_GENESIS(ERROR, "invalid area_t::resource %s", resource.c_str());
       return false;
     }
@@ -536,10 +532,7 @@ namespace genesis_n {
   bool recipe_item_t::validation(const config_t& config) {
     TRACE_GENESIS;
 
-    if (std::find_if(config.resources.begin(), config.resources.end(),
-          [this] (const auto& resource_info) { return resource_info.name == name; })
-        == config.resources.end())
-    {
+    if (!config.resources.contains(name)) {
       LOG_GENESIS(ERROR, "invalid recipe_item_t::name %s", name.c_str());
       return false;
     }
@@ -562,15 +555,15 @@ namespace genesis_n {
       return false;
     }
 
-    for (auto& recipe_item : in) {
-      if (!recipe_item.validation(config)) {
+    for (auto& [key, recipe_item] : in) {
+      if (key != recipe_item.name || !recipe_item.validation(config)) {
         LOG_GENESIS(ERROR, "invalid recipe_t::in");
         return false;
       }
     }
 
-    for (auto& recipe_item : out) {
-      if (!recipe_item.validation(config)) {
+    for (auto& [key, recipe_item] : out) {
+      if (key != recipe_item.name || !recipe_item.validation(config)) {
         LOG_GENESIS(ERROR, "invalid recipe_t::out");
         return false;
       }
@@ -589,16 +582,13 @@ namespace genesis_n {
   bool resource_t::validation(const config_t& config) {
     TRACE_GENESIS;
 
-    if (std::find_if(config.resources.begin(), config.resources.end(),
-          [this] (const auto& resource_info) { return resource_info.name == name; })
-        == config.resources.end())
-    {
+    if (!config.resources.contains(name)) {
       LOG_GENESIS(ERROR, "invalid resource_t::name %s", name.c_str());
       return false;
     }
 
-    if (value == utils_t::npos) {
-      LOG_GENESIS(ERROR, "invalid resource_t::value %zd", value);
+    if (count == utils_t::npos) {
+      LOG_GENESIS(ERROR, "invalid resource_t::count %zd", count);
       return false;
     }
 
@@ -615,10 +605,7 @@ namespace genesis_n {
       return false;
     }
 
-    if (std::find_if(config.resources.begin(), config.resources.end(),
-          [this] (const auto& resource_info) { return resource_info.name == resource; })
-        == config.resources.end())
-    {
+    if (!config.resources.contains(resource)) {
       LOG_GENESIS(ERROR, "invalid cell_pipe_t::resource %s", resource.c_str());
       return false;
     }
@@ -662,8 +649,8 @@ namespace genesis_n {
       return false;
     }
 
-    for (auto& resource : resources) {
-      if (!resource.validation(*this)) {
+    for (auto& [key, resource] : resources) {
+      if (key != resource.name || !resource.validation(*this)) {
         LOG_GENESIS(ERROR, "invalid config_t::resources");
         return false;
       }
@@ -674,10 +661,12 @@ namespace genesis_n {
       return false;
     }
 
-    for (auto& area : areas) {
-      if (!area.validation(*this)) {
-        LOG_GENESIS(ERROR, "invalid config_t::area");
-        return false;
+    for (auto& [key, area_v] : areas) {
+      for (auto& area : area_v) {
+        if (key != area.resource || !area.validation(*this)) {
+          LOG_GENESIS(ERROR, "invalid config_t::area");
+          return false;
+        }
       }
     }
 
@@ -686,8 +675,8 @@ namespace genesis_n {
       return false;
     }
 
-    for (auto& recipe : recipes) {
-      if (!recipe.validation(*this)) {
+    for (auto& [key, recipe] : recipes) {
+      if (key != recipe.name || !recipe.validation(*this)) {
         LOG_GENESIS(ERROR, "invalid config_t::recipe");
         return false;
       }
@@ -807,7 +796,104 @@ namespace genesis_n {
   void world_t::update() {
     TRACE_GENESIS;
 
-    // TODO
+    for (auto& [_, cell] : ctx.cells) {
+      LOG_GENESIS(DEBUG, "cell.pos %zd", cell.pos);
+      try {
+        update_cell_total(cell);
+        if (cell.type == utils_t::EXTRACTOR) {
+          update_cell_producer(cell); // TODO
+        } else if (cell.type == utils_t::PRODUCER) {
+          update_cell_producer(cell);
+        } else {
+          LOG_GENESIS(ERROR, "unknown cell.type %s", cell.type);
+        }
+      } catch (const std::exception& e) {
+        LOG_GENESIS(ERROR, "exception %s", e.what());
+      }
+    }
+
+    for (auto& [_, bacteria] : ctx.bacterias) {
+      if (!bacteria) {
+        continue;
+      }
+
+      LOG_GENESIS(DEBUG, "bacteria.pos %zd", bacteria->pos);
+    }
+  }
+
+  void world_t::update_cell_total(cell_t& cell) {
+    TRACE_GENESIS;
+
+    // pipes
+
+    cell.age++;
+  }
+
+  void world_t::update_cell_producer(cell_t& cell) {
+    TRACE_GENESIS;
+
+    for (const auto& recipe_name : cell.recipes) {
+      const auto& recipes = ctx_json.config.recipes;
+      if (!recipes.contains(recipe_name)) {
+        LOG_GENESIS(ERROR, "recipe_name not found: %s", recipe_name.c_str());
+        continue;
+      }
+
+      const auto& recipe = recipes.at(recipe_name);
+      LOG_GENESIS(DEBUG, "recipe_name %s", recipe.name.c_str());
+
+      bool need_produce = false;
+
+      for (const auto& [_, recipe_item] : recipe.out) {
+        if (!cell.resources.contains(recipe_item.name)) {
+          continue;
+        }
+
+        auto& cell_resource = cell.resources.at(recipe_item.name);
+        const auto& resource_info = ctx_json.config.resources.at(cell_resource.name);
+        if (cell_resource.count < resource_info.stack_size) {
+          need_produce = true;
+        }
+      }
+
+      need_produce = true;
+
+      for (const auto& [_, recipe_item] : recipe.in) {
+        if (!cell.resources.contains(recipe_item.name)) {
+          need_produce = false;
+          break;
+        }
+
+        const auto& cell_resource = cell.resources.at(recipe_item.name);
+        LOG_GENESIS(DEBUG, "resource.count %zd", cell_resource.count);
+        LOG_GENESIS(DEBUG, "recipe_item.count %zd", recipe_item.count);
+        if (cell_resource.count < recipe_item.count) {
+          need_produce = false;
+          break;
+        }
+      }
+
+      if (!need_produce) {
+        continue;
+      }
+
+      for (const auto& [_, recipe_item] : recipe.in) {
+        auto& cell_resource = cell.resources.at(recipe_item.name);
+        cell_resource.count -= recipe_item.count;
+      }
+
+      for (const auto& [_, recipe_item] : recipe.out) {
+        if (!cell.resources.contains(recipe_item.name)) {
+          continue;
+        }
+
+        auto& resource = cell.resources.at(recipe_item.name);
+        const auto& resource_info = ctx_json.config.resources.at(cell_resource.name);
+        // TODO areas
+        cell_resource.count += recipe_item.count;
+        cell_resource.count = std::min(cell_resource.count, resource_info.stack_size);
+      }
+    }
   }
 
   void world_t::init() {
@@ -829,7 +915,7 @@ namespace genesis_n {
 
     if (!ctx_json.validation()) {
       LOG_GENESIS(ERROR, "invalid config");
-      throw std::runtime_error("TODO invalid config");
+      throw std::runtime_error("invalid config");
     }
 
     ctx.cells = {};
@@ -898,10 +984,10 @@ int main(int argc, char* argv[]) {
   world.file_name = file_name;
   world.init();
 
-  while (true) {
+  for (size_t i{}; i < 10; ++i) {
     world.update();
     world.save();
-    break;
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
   std::cout << "end" << std::endl;
