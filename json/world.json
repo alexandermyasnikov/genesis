@@ -70,7 +70,13 @@
   "cells": [
     {
       "age": 0,
-      "pipes": [],
+      "pipes": [
+        {
+          "direction": "LN",
+          "resource": "water",
+          "velocity": 1
+        }
+      ],
       "pos": 7,
       "recipes": [
         "sun_energy"
@@ -107,7 +113,6 @@
     "position_n": 20,
     "recipes": [
       {
-        "id": 1,
         "in": [
           {
             "count": 1,
@@ -123,7 +128,6 @@
         ]
       },
       {
-        "id": 2,
         "in": [
           {
             "count": 10,
@@ -145,16 +149,16 @@
     ],
     "resources": [
       {
-        "id": 1,
-        "name": "energy"
+        "name": "energy",
+        "stack_size": 100
       },
       {
-        "id": 2,
-        "name": "water"
+        "name": "water",
+        "stack_size": 100
       },
       {
-        "id": 3,
-        "name": "mineral"
+        "name": "mineral",
+        "stack_size": 100
       }
     ],
     "revision": 0

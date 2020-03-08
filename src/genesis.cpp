@@ -69,14 +69,14 @@ namespace genesis_n {
     inline static std::string DEBUG            = "debug";
     inline static std::string MIND             = "mind ";
     inline static std::string TIME             = "time ";
-    inline static std::string LN               = "LN";
-    inline static std::string RN               = "RN";
-    inline static std::string NU               = "NU";
-    inline static std::string ND               = "ND";
-    inline static std::string LU               = "LU";
-    inline static std::string LD               = "LD";
-    inline static std::string RU               = "RU";
-    inline static std::string RD               = "RD";
+    inline static std::string DIR_LN           = "LN";
+    inline static std::string DIR_RN           = "RN";
+    inline static std::string DIR_NU           = "NU";
+    inline static std::string DIR_ND           = "ND";
+    inline static std::string DIR_LU           = "LU";
+    inline static std::string DIR_LD           = "LD";
+    inline static std::string DIR_RU           = "RU";
+    inline static std::string DIR_RD           = "RD";
     inline static size_t npos                  = std::string::npos;
     inline static std::string EXTRACTOR        = "extractor";
     inline static std::string PRODUCER         = "producer";
@@ -93,7 +93,8 @@ namespace genesis_n {
         { ERROR, DEBUG, TRACE, ARGS };
 #endif
 
-    inline static std::set<std::string> directions = { LN, RN, NU, ND, LU, LD, RU, RD };
+    inline static std::set<std::string> directions = {
+        DIR_LN, DIR_RN, DIR_NU, DIR_ND, DIR_LU, DIR_LD, DIR_RU, DIR_RD };
     inline static std::set<std::string> cell_types = { EXTRACTOR, PRODUCER, SPORE, DEFENDER, TRANSFER };
 
     static void rename(const std::string& name_old, const std::string& name_new);
@@ -116,8 +117,8 @@ namespace genesis_n {
   using bacteria_sptr_t = std::shared_ptr<bacteria_t>;
 
   struct resource_info_t {
-    uint64_t      id     = utils_t::npos;
-    std::string   name   = {};
+    std::string   name        = {};
+    uint64_t      stack_size  = utils_t::npos;
     // loss_factor
 
     bool validation(const config_t& config);
@@ -151,7 +152,6 @@ namespace genesis_n {
     using in_t  = std::vector<recipe_item_t>;
     using out_t = std::vector<recipe_item_t>;
 
-    uint64_t      id                = utils_t::npos;
     std::string   name              = {};
     in_t          in                = {};
     out_t         out               = {};
@@ -200,7 +200,7 @@ namespace genesis_n {
     uint64_t      position_max       = 400;
     uint64_t      code_size          = 32;
     debug_t       debug              = { utils_t::ERROR };
-    resources_t   resources          = { {1, "energy"} };
+    resources_t   resources          = {};
     areas_t       areas              = {};
     recipes_t     recipes            = {};
 
@@ -245,16 +245,16 @@ namespace genesis_n {
 
   ////////////////////////////////////////////////////////////////////////////////
 
-  inline void to_json(nlohmann::json& json, const resource_info_t& resource) {
+  inline void to_json(nlohmann::json& json, const resource_info_t& resource_info) {
     TRACE_GENESIS;
-    JSON_SAVE2(json, resource, id);
-    JSON_SAVE2(json, resource, name);
+    JSON_SAVE2(json, resource_info, name);
+    JSON_SAVE2(json, resource_info, stack_size);
   }
 
-  inline void from_json(const nlohmann::json& json, resource_info_t& resource) {
+  inline void from_json(const nlohmann::json& json, resource_info_t& resource_info) {
     TRACE_GENESIS;
-    JSON_LOAD2(json, resource, id);
-    JSON_LOAD2(json, resource, name);
+    JSON_LOAD2(json, resource_info, name);
+    JSON_LOAD2(json, resource_info, stack_size);
   }
 
   inline void to_json(nlohmann::json& json, const area_t& area) {
@@ -293,7 +293,6 @@ namespace genesis_n {
 
   inline void to_json(nlohmann::json& json, const recipe_t& recipe) {
     TRACE_GENESIS;
-    JSON_SAVE2(json, recipe, id);
     JSON_SAVE2(json, recipe, name);
     JSON_SAVE2(json, recipe, in);
     JSON_SAVE2(json, recipe, out);
@@ -301,7 +300,6 @@ namespace genesis_n {
 
   inline void from_json(const nlohmann::json& json, recipe_t& recipe) {
     TRACE_GENESIS;
-    JSON_LOAD2(json, recipe, id);
     JSON_LOAD2(json, recipe, name);
     JSON_LOAD2(json, recipe, in);
     JSON_LOAD2(json, recipe, out);
@@ -410,13 +408,13 @@ namespace genesis_n {
   bool resource_info_t::validation(const config_t&) {
     TRACE_GENESIS;
 
-    if (!id || id == utils_t::npos) {
-      LOG_GENESIS(ERROR, "invalid resource_info_t::id %zd", id);
+    if (name.empty()) {
+      LOG_GENESIS(ERROR, "invalid resource_info_t::name %s", name.c_str());
       return false;
     }
 
-    if (name.empty()) {
-      LOG_GENESIS(ERROR, "invalid resource_info_t::name %s", name.c_str());
+    if (stack_size == utils_t::npos) {
+      LOG_GENESIS(ERROR, "invalid resource_info_t::stack_size %zd", stack_size);
       return false;
     }
 
@@ -558,11 +556,6 @@ namespace genesis_n {
 
   bool recipe_t::validation(const config_t& config) {
     TRACE_GENESIS;
-
-    if (!id || id == utils_t::npos) {
-      LOG_GENESIS(ERROR, "invalid recipe_t::id %zd", id);
-      return false;
-    }
 
     if (name.empty()) {
       LOG_GENESIS(ERROR, "invalid recipe_t::name %s", name.c_str());
@@ -829,7 +822,7 @@ namespace genesis_n {
     nlohmann::json json;
     if (!utils_t::load(json, file_name)) {
       LOG_GENESIS(ERROR, "can not load file %s", file_name.c_str());
-      return;
+      throw std::runtime_error("invalid json");
     }
 
     ctx_json = json;
