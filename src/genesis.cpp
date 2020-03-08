@@ -72,7 +72,20 @@ namespace genesis_n {
     inline static std::string DEBUG            = "debug";
     inline static std::string MIND             = "mind ";
     inline static std::string TIME             = "time ";
+    inline static std::string LN               = "LN";
+    inline static std::string RN               = "RN";
+    inline static std::string NU               = "NU";
+    inline static std::string ND               = "ND";
+    inline static std::string LU               = "LU";
+    inline static std::string LD               = "LD";
+    inline static std::string RU               = "RU";
+    inline static std::string RD               = "RD";
     inline static size_t npos                  = std::string::npos;
+    inline static size_t EXTRACTOR             = 1;
+    inline static size_t PRODUCER              = 2;
+    inline static size_t SPORE                 = 3;
+    inline static size_t DEFENDER              = 4;
+    inline static size_t TRANSFER              = 5;
 
     inline static size_t seed = time(0);
 #if PRODUCTION
@@ -80,6 +93,8 @@ namespace genesis_n {
 #else
     inline static std::set<std::string> debug = { utils_t::ERROR, utils_t::DEBUG, utils_t::TRACE, utils_t::ARGS };
 #endif
+
+    inline static std::set<std::string> directions = { LN, RN, NU, ND, LU, LD, RU, RD };
 
     static void rename(const std::string& name_old, const std::string& name_new);
     static void remove(const std::string& name);
@@ -101,7 +116,7 @@ namespace genesis_n {
   using bacteria_sptr_t = std::shared_ptr<bacteria_t>;
 
   struct resource_info_t {
-    uint64_t      id     = 0;
+    uint64_t      id     = utils_t::npos;
     std::string   name   = {};
     // loss_factor
 
@@ -111,21 +126,21 @@ namespace genesis_n {
   struct area_t {
     std::string   name              = {};
     std::string   resource          = {};
-    uint64_t      x0                = {};
-    uint64_t      x1                = {};
-    uint64_t      y0                = {};
-    uint64_t      y1                = {};
-    double        radius            = {};
-    double        mean              = {};
-    double        sigma             = {};
-    double        coef              = {};
+    uint64_t      x0                = utils_t::npos;
+    uint64_t      x1                = utils_t::npos;
+    uint64_t      y0                = utils_t::npos;
+    uint64_t      y1                = utils_t::npos;
+    double        radius            = -1;
+    double        mean              = 0;
+    double        sigma             = -1;
+    double        coef              = -1;
 
     bool validation(const config_t& config);
   };
 
   struct recipe_item_t {
     std::string   name    = {};
-    uint64_t      count   = {};
+    uint64_t      count   = utils_t::npos;
 
     bool validation(const config_t& config);
   };
@@ -134,7 +149,7 @@ namespace genesis_n {
     using in_t  = std::vector<recipe_item_t>;
     using out_t = std::vector<recipe_item_t>;
 
-    uint64_t      id                = {};
+    uint64_t      id                = utils_t::npos;
     std::string   name              = {};
     in_t          in                = {};
     out_t         out               = {};
@@ -143,16 +158,16 @@ namespace genesis_n {
   };
 
   struct cell_pipe_t {
-    uint64_t   pos_next_cell       = 0;
-    uint64_t   resource_index      = 0;
-    uint64_t   resource_velocity   = 0;
+    std::string   direction      = {};
+    std::string   resource       = {};
+    uint64_t      velocity       = utils_t::npos;
 
     bool validation(const config_t& config);
   };
 
   struct resource_t {
-    uint64_t   id      = {};
-    uint64_t   value   = {};
+    uint64_t   id      = utils_t::npos;
+    uint64_t   value   = utils_t::npos;
 
     bool validation(const config_t& config);
   };
@@ -161,12 +176,9 @@ namespace genesis_n {
     using resources_t = std::vector<resource_t>;
     using pipes_t     = std::vector<cell_pipe_t>;
 
-    uint64_t      id               = 0;
-    uint64_t      pos              = 0;
+    uint64_t      pos              = utils_t::npos;
     uint64_t      age              = 0;
-    uint64_t      health           = 0;
-    uint64_t      experience       = 0;
-    uint64_t      type             = 0;
+    uint64_t      type             = {};
     resources_t   resources        = {};
     pipes_t       pipes            = {};
 
@@ -303,16 +315,16 @@ namespace genesis_n {
 
   inline void to_json(nlohmann::json& json, const cell_pipe_t& cell_pipe) {
     TRACE_GENESIS;
-    JSON_SAVE2(json, cell_pipe, pos_next_cell);
-    JSON_SAVE2(json, cell_pipe, resource_index);
-    JSON_SAVE2(json, cell_pipe, resource_velocity);
+    JSON_SAVE2(json, cell_pipe, direction);
+    JSON_SAVE2(json, cell_pipe, resource);
+    JSON_SAVE2(json, cell_pipe, velocity);
   }
 
   inline void from_json(const nlohmann::json& json, cell_pipe_t& cell_pipe) {
     TRACE_GENESIS;
-    JSON_LOAD2(json, cell_pipe, pos_next_cell);
-    JSON_LOAD2(json, cell_pipe, resource_index);
-    JSON_LOAD2(json, cell_pipe, resource_velocity);
+    JSON_LOAD2(json, cell_pipe, direction);
+    JSON_LOAD2(json, cell_pipe, resource);
+    JSON_LOAD2(json, cell_pipe, velocity);
   }
 
   inline void to_json(nlohmann::json& json, const config_t& config) {
@@ -341,11 +353,8 @@ namespace genesis_n {
 
   inline void to_json(nlohmann::json& json, const cell_t& cell) {
     TRACE_GENESIS;
-    JSON_SAVE2(json, cell, id);
     JSON_SAVE2(json, cell, pos);
     JSON_SAVE2(json, cell, age);
-    JSON_SAVE2(json, cell, health);
-    JSON_SAVE2(json, cell, experience);
     JSON_SAVE2(json, cell, type);
     JSON_SAVE2(json, cell, resources);
     JSON_SAVE2(json, cell, pipes);
@@ -353,11 +362,8 @@ namespace genesis_n {
 
   inline void from_json(const nlohmann::json& json, cell_t& cell) {
     TRACE_GENESIS;
-    JSON_LOAD2(json, cell, id);
     JSON_LOAD2(json, cell, pos);
     JSON_LOAD2(json, cell, age);
-    JSON_LOAD2(json, cell, health);
-    JSON_LOAD2(json, cell, experience);
     JSON_LOAD2(json, cell, type);
     JSON_LOAD2(json, cell, resources);
     JSON_LOAD2(json, cell, pipes);
@@ -403,7 +409,7 @@ namespace genesis_n {
   bool resource_info_t::validation(const config_t&) {
     TRACE_GENESIS;
 
-    if (!id) {
+    if (!id || id == utils_t::npos) {
       LOG_GENESIS(ERROR, "invalid resource_info_t::id %zd", id);
       return false;
     }
@@ -446,14 +452,16 @@ namespace genesis_n {
       return false;
     }
 
-    // health
+    // age
 
     if (!type) {
       LOG_GENESIS(ERROR, "invalid cell_t::type %zd", type);
       return false;
     }
 
+    // TODO
     // resources
+    // pipes
 
     return true;
   }
@@ -469,7 +477,7 @@ namespace genesis_n {
     }
 
     if (resource.empty()) {
-      LOG_GENESIS(ERROR, "invalid area_t::resource %s", resource.c_str());
+      LOG_GENESIS(ERROR, "invalid area_t::resource_name %s", resource.c_str());
       return false;
     }
 
@@ -481,9 +489,16 @@ namespace genesis_n {
       return false;
     }
 
-    // x0 x1 y0 y1
+    if (x0 >= x1 || y0 >= y1) {
+      LOG_GENESIS(ERROR, "invalid area_t::pos %zd %zd %zd %zd", x0, x1, y0, y1);
+      return false;
+    }
 
-    // radius
+    if (radius <= 0) {
+      LOG_GENESIS(ERROR, "invalid area_t::radius %f", radius);
+      return false;
+    }
+
     // mean
 
     if (sigma <= 0) {
@@ -517,7 +532,7 @@ namespace genesis_n {
       return false;
     }
 
-    if (!count) {
+    if (!count || count == utils_t::npos) {
       LOG_GENESIS(ERROR, "invalid recipe_item_t::count %s", count);
       return false;
     }
@@ -530,7 +545,7 @@ namespace genesis_n {
   bool recipe_t::validation(const config_t& config) {
     TRACE_GENESIS;
 
-    if (!id) {
+    if (!id || id == utils_t::npos) {
       LOG_GENESIS(ERROR, "invalid recipe_t::id %zd", id);
       return false;
     }
@@ -564,21 +579,52 @@ namespace genesis_n {
 
   ////////////////////////////////////////////////////////////////////////////////
 
+  bool cell_pipe_t::validation(const config_t& config) {
+    TRACE_GENESIS;
+
+    if (!utils_t::directions.contains(direction)) {
+      LOG_GENESIS(ERROR, "invalid cell_pipe_t::direction %s", direction.c_str());
+      return false;
+    }
+
+    if (resource.empty()) {
+      LOG_GENESIS(ERROR, "invalid cell_pipe_t::resource %s", resource.c_str());
+      return false;
+    }
+
+    if (std::find_if(config.resources.begin(), config.resources.end(),
+          [this] (const auto& resource_info) { return resource_info.name == resource; })
+        == config.resources.end())
+    {
+      LOG_GENESIS(ERROR, "invalid cell_pipe_t::resource %s", resource.c_str());
+      return false;
+    }
+
+    if (!velocity || velocity == utils_t::npos) {
+      LOG_GENESIS(ERROR, "invalid cell_pipe_t::velocity %zd", velocity);
+      return false;
+    }
+
+    return true;
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
   bool config_t::validation() {
     TRACE_GENESIS;
     position_max = (position_max / position_n) * position_n;
 
-    if (position_n > 1000) {
+    if (position_n < 5 || position_n > 1000) {
       LOG_GENESIS(ERROR, "invalid config_t::position_n %zd", position_n);
       return false;
     }
 
-    if (position_max > 1000 * 1000) {
+    if (position_max < 5 * 5 || position_max > 1000 * 1000) {
       LOG_GENESIS(ERROR, "invalid config_t::position_max %zd", position_max);
       return false;
     }
 
-    if (code_size > 1000) {
+    if (code_size < 5 || code_size > 1000) {
       LOG_GENESIS(ERROR, "invalid config_t::code_size %zd", code_size);
       return false;
     }
@@ -588,7 +634,7 @@ namespace genesis_n {
       return false;
     }
 
-    if (resources.size() > 100) {
+    if (resources.empty() || resources.size() > 100) {
       LOG_GENESIS(ERROR, "invalid config_t::resources %zd", resources.size());
       return false;
     }
@@ -648,8 +694,11 @@ namespace genesis_n {
       for (const auto& cell_json : cells_json) {
         cell_t cell;
         cell = cell_json;
-        if (cell.validation(config))
+        if (cell.validation(config)) {
           cells[cell.pos] = cell;
+        } else {
+          LOG_GENESIS(ERROR, "invalid cell %zd", cell.pos);
+        }
       }
     }
 
@@ -657,8 +706,11 @@ namespace genesis_n {
       for (const auto& bacteria_json : bacterias_json) {
         auto bacteria = std::make_shared<bacteria_t>();
         *bacteria = bacteria_json;
-        if (bacteria->validation(config))
+        if (bacteria->validation(config)) {
           bacterias[bacteria->pos] = bacteria;
+        } else {
+          LOG_GENESIS(ERROR, "invalid bacteria %zd", bacteria->pos);
+        }
       }
     }
   }
