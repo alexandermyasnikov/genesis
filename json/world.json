@@ -70,13 +70,10 @@
   "cells": [
     {
       "age": 0,
-      "experience": 0,
-      "health": 0,
-      "id": 0,
       "pipes": [],
       "pos": 7,
       "resources": [],
-      "type": 1
+      "type": "extractor"
     }
   ],
   "config": {
@@ -140,6 +137,5 @@
       }
     ],
     "revision": 0
-  },
-  "file_name": "/mnt/code/cpp/genesis/json/world.json"
+  }
 }

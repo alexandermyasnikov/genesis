@@ -60,9 +60,6 @@ namespace genesis_n {
   struct config_t;
 
   struct utils_t {
-    inline static std::string CONFIG_PATH      = "config";
-    inline static std::string CELLS_PATH       = "cells";
-    inline static std::string BACTERIAS_PATH   = "bacterias";
     inline static std::string TMP_PREFIX       = ".tmp";
     inline static std::string TRACE            = "trace";
     inline static std::string ARGS             = "args ";
@@ -81,20 +78,23 @@ namespace genesis_n {
     inline static std::string RU               = "RU";
     inline static std::string RD               = "RD";
     inline static size_t npos                  = std::string::npos;
-    inline static size_t EXTRACTOR             = 1;
-    inline static size_t PRODUCER              = 2;
-    inline static size_t SPORE                 = 3;
-    inline static size_t DEFENDER              = 4;
-    inline static size_t TRANSFER              = 5;
+    inline static std::string EXTRACTOR        = "extractor";
+    inline static std::string PRODUCER         = "producer";
+    inline static std::string SPORE            = "spore";
+    inline static std::string DEFENDER         = "defender";
+    inline static std::string TRANSFER         = "transfer";
 
     inline static size_t seed = time(0);
+
+    inline static std::set<std::string> debug =
 #if PRODUCTION
-    inline static std::set<std::string> debug = { ERROR };
+        { ERROR };
 #else
-    inline static std::set<std::string> debug = { utils_t::ERROR, utils_t::DEBUG, utils_t::TRACE, utils_t::ARGS };
+        { ERROR, DEBUG, TRACE, ARGS };
 #endif
 
     inline static std::set<std::string> directions = { LN, RN, NU, ND, LU, LD, RU, RD };
+    inline static std::set<std::string> cell_types = { EXTRACTOR, PRODUCER, SPORE, DEFENDER, TRANSFER };
 
     static void rename(const std::string& name_old, const std::string& name_new);
     static void remove(const std::string& name);
@@ -166,8 +166,8 @@ namespace genesis_n {
   };
 
   struct resource_t {
-    uint64_t   id      = utils_t::npos;
-    uint64_t   value   = utils_t::npos;
+    std::string   name    = {};
+    uint64_t      value   = utils_t::npos;
 
     bool validation(const config_t& config);
   };
@@ -178,7 +178,7 @@ namespace genesis_n {
 
     uint64_t      pos              = utils_t::npos;
     uint64_t      age              = 0;
-    uint64_t      type             = {};
+    std::string   type             = {};
     resources_t   resources        = {};
     pipes_t       pipes            = {};
 
@@ -203,17 +203,23 @@ namespace genesis_n {
     bool validation();
   };
 
+  struct context_json_t {
+    using cells_t       = std::vector<cell_t>;
+    using bacterias_t   = std::vector<bacteria_t>;
+
+    config_t      config        = {};
+    cells_t       cells         = {};
+    bacterias_t   bacterias     = {};
+
+    bool validation();
+  };
+
   struct context_t {
-    using cells_t = std::vector<cell_t>;
+    using cells_t = std::map<size_t/*pos*/, cell_t>;
     using bacterias_t = std::map<size_t/*pos*/, bacteria_sptr_t>;
 
-    std::string   file_name        = "/tmp/world.json";
-    config_t      config           = {};
     cells_t       cells            = {};
     bacterias_t   bacterias        = {};
-
-    void load(const nlohmann::json& json);
-    void save(nlohmann::json& json) const;
   };
 
   /*
@@ -223,7 +229,9 @@ namespace genesis_n {
   */
 
   struct world_t {
-    context_t   ctx;
+    context_json_t   ctx_json;
+    context_t        ctx;
+    std::string      file_name;
 
     void update();
     void init();
@@ -303,13 +311,13 @@ namespace genesis_n {
 
   inline void to_json(nlohmann::json& json, const resource_t& resource) {
     TRACE_GENESIS;
-    JSON_SAVE2(json, resource, id);
+    JSON_SAVE2(json, resource, name);
     JSON_SAVE2(json, resource, value);
   }
 
   inline void from_json(const nlohmann::json& json, resource_t& resource) {
     TRACE_GENESIS;
-    JSON_LOAD2(json, resource, id);
+    JSON_LOAD2(json, resource, name);
     JSON_LOAD2(json, resource, value);
   }
 
@@ -383,26 +391,19 @@ namespace genesis_n {
     JSON_LOAD2(json, bacteria, pos);
   }
 
-  /*
-  template <typename type_t>
-  inline void to_json(nlohmann::json& json, const std::shared_ptr<type_t>& shared) {
+  inline void to_json(nlohmann::json& json, const context_json_t& context_json) {
     TRACE_GENESIS;
-    if (shared) {
-      json["value"] = *shared;
-    } else {
-      ;
-    }
+    JSON_SAVE2(json, context_json, config);
+    JSON_SAVE2(json, context_json, cells);
+    JSON_SAVE2(json, context_json, bacterias);
   }
 
-  template <typename type_t>
-  inline void from_json(const nlohmann::json& json, std::shared_ptr<type_t>& shared) {
+  inline void from_json(const nlohmann::json& json, context_json_t& context_json) {
     TRACE_GENESIS;
-    LOG_GENESIS(ARGS, "shared: %p", shared.get());
-
-    shared = std::make_shared<type_t>();
-    *shared = json.value("value", *shared);
+    JSON_LOAD2(json, context_json, config);
+    JSON_LOAD2(json, context_json, cells);
+    JSON_LOAD2(json, context_json, bacterias);
   }
-  */
 
   ////////////////////////////////////////////////////////////////////////////////
 
@@ -454,14 +455,24 @@ namespace genesis_n {
 
     // age
 
-    if (!type) {
-      LOG_GENESIS(ERROR, "invalid cell_t::type %zd", type);
+    if (!utils_t::cell_types.contains(type)) {
+      LOG_GENESIS(ERROR, "invalid cell_t::type %s", type.c_str());
       return false;
     }
 
-    // TODO
-    // resources
-    // pipes
+    for (auto& resource : resources) {
+      if (!resource.validation(config)) {
+        LOG_GENESIS(ERROR, "invalid cell_t::resources");
+        return false;
+      }
+    }
+
+    for (auto& pipe : pipes) {
+      if (!pipe.validation(config)) {
+        LOG_GENESIS(ERROR, "invalid cell_t::pipes");
+        return false;
+      }
+    }
 
     return true;
   }
@@ -473,11 +484,6 @@ namespace genesis_n {
 
     if (name.empty()) {
       LOG_GENESIS(ERROR, "invalid area_t::name %s", name.c_str());
-      return false;
-    }
-
-    if (resource.empty()) {
-      LOG_GENESIS(ERROR, "invalid area_t::resource_name %s", resource.c_str());
       return false;
     }
 
@@ -518,11 +524,6 @@ namespace genesis_n {
 
   bool recipe_item_t::validation(const config_t& config) {
     TRACE_GENESIS;
-
-    if (name.empty()) {
-      LOG_GENESIS(ERROR, "invalid recipe_item_t::name %s", name.c_str());
-      return false;
-    }
 
     if (std::find_if(config.resources.begin(), config.resources.end(),
           [this] (const auto& resource_info) { return resource_info.name == name; })
@@ -579,16 +580,32 @@ namespace genesis_n {
 
   ////////////////////////////////////////////////////////////////////////////////
 
+  bool resource_t::validation(const config_t& config) {
+    TRACE_GENESIS;
+
+    if (std::find_if(config.resources.begin(), config.resources.end(),
+          [this] (const auto& resource_info) { return resource_info.name == name; })
+        == config.resources.end())
+    {
+      LOG_GENESIS(ERROR, "invalid resource_t::name %s", name.c_str());
+      return false;
+    }
+
+    if (value == utils_t::npos) {
+      LOG_GENESIS(ERROR, "invalid resource_t::value %zd", value);
+      return false;
+    }
+
+    return true;
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
   bool cell_pipe_t::validation(const config_t& config) {
     TRACE_GENESIS;
 
     if (!utils_t::directions.contains(direction)) {
       LOG_GENESIS(ERROR, "invalid cell_pipe_t::direction %s", direction.c_str());
-      return false;
-    }
-
-    if (resource.empty()) {
-      LOG_GENESIS(ERROR, "invalid cell_pipe_t::resource %s", resource.c_str());
       return false;
     }
 
@@ -675,71 +692,29 @@ namespace genesis_n {
 
   ////////////////////////////////////////////////////////////////////////////////
 
-  void context_t::load(const nlohmann::json& json) {
+  bool context_json_t::validation() {
     TRACE_GENESIS;
 
-    if (!json.is_object()) {
-      LOG_GENESIS(ERROR, "json is not object");
-      return;
-    }
-
-    JSON_LOAD(json, config);
     if (!config.validation()) {
-      LOG_GENESIS(ERROR, "invalid config");
-      throw std::runtime_error("TODO invalid config");
+      LOG_GENESIS(ERROR, "invalid config_json_t::config");
+      return false;
     }
 
-    cells.assign(config.position_max, {});
-    if (const auto& cells_json = json[utils_t::CELLS_PATH]; cells_json.is_array()) {
-      for (const auto& cell_json : cells_json) {
-        cell_t cell;
-        cell = cell_json;
-        if (cell.validation(config)) {
-          cells[cell.pos] = cell;
-        } else {
-          LOG_GENESIS(ERROR, "invalid cell %zd", cell.pos);
-        }
+    for (auto& cell : cells) {
+      if (!cell.validation(config)) {
+        LOG_GENESIS(ERROR, "invalid config_json_t::cells");
+        return false;
       }
     }
 
-    if (const auto& bacterias_json = json[utils_t::BACTERIAS_PATH]; bacterias_json.is_array()) {
-      for (const auto& bacteria_json : bacterias_json) {
-        auto bacteria = std::make_shared<bacteria_t>();
-        *bacteria = bacteria_json;
-        if (bacteria->validation(config)) {
-          bacterias[bacteria->pos] = bacteria;
-        } else {
-          LOG_GENESIS(ERROR, "invalid bacteria %zd", bacteria->pos);
-        }
-      }
-    }
-  }
-
-  void context_t::save(nlohmann::json& json) const {
-    TRACE_GENESIS;
-
-    if (!json.is_object()) {
-      json = nlohmann::json::object();
-    }
-
-    JSON_SAVE(json, file_name);
-    JSON_SAVE(json, config);
-
-    auto& cells_json = json[utils_t::CELLS_PATH];
-    for (const auto& cell : cells) {
-      if (cell.type) {
-        cells_json.push_back({});
-        cells_json.back() = cell;
+    for (auto& bacteria : bacterias) {
+      if (!bacteria.validation(config)) {
+        LOG_GENESIS(ERROR, "invalid config_json_t::bacterias");
+        return false;
       }
     }
 
-    auto& bacterias_json = json[utils_t::BACTERIAS_PATH];
-    for (const auto& [_, bacteria] : bacterias) {
-      if (bacteria) {
-        bacterias_json.push_back({});
-        bacterias_json.back() = *bacteria;
-      }
-    }
+    return true;
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -826,44 +801,68 @@ namespace genesis_n {
   void world_t::update() {
     TRACE_GENESIS;
 
-    { // XXX
-      auto bacteria = std::make_shared<bacteria_t>();
-      bacteria->pos = 11;
-      if (bacteria->validation(ctx.config) && !ctx.bacterias[bacteria->pos])
-        ctx.bacterias[bacteria->pos] = bacteria;
-    }
-
-    { // XXX
-      cell_t cell;
-      cell.pos = 7;
-      cell.type = 1;
-      if (cell.validation(ctx.config))
-        ctx.cells[cell.pos] = cell;
-    }
+    // TODO
   }
 
   void world_t::init() {
     TRACE_GENESIS;
     load();
-    utils_t::debug = ctx.config.debug;
+    utils_t::debug = ctx_json.config.debug;
     save();
   }
 
   void world_t::load() {
     TRACE_GENESIS;
     nlohmann::json json;
-    if (!utils_t::load(json, ctx.file_name)) {
-      LOG_GENESIS(ERROR, "%s: can not load file", ctx.file_name.c_str());
+    if (!utils_t::load(json, file_name)) {
+      LOG_GENESIS(ERROR, "can not load file %s", file_name.c_str());
       return;
     }
-    ctx.load(json);
+
+    ctx_json = json;
+
+    if (!ctx_json.validation()) {
+      LOG_GENESIS(ERROR, "invalid config");
+      throw std::runtime_error("TODO invalid config");
+    }
+
+    ctx.cells = {};
+    for (auto& cell : ctx_json.cells) {
+      if (cell.validation(ctx_json.config)) {
+        ctx.cells[cell.pos] = cell;
+      }
+    }
+
+    ctx.bacterias = {};
+    for (auto& bacteria : ctx_json.bacterias) {
+      if (bacteria.validation(ctx_json.config)) {
+        ctx.bacterias[bacteria.pos] = std::make_shared<bacteria_t>(bacteria);
+      }
+    }
   }
 
   void world_t::save() {
     TRACE_GENESIS;
+
+    ctx_json.cells = {};
+    ctx_json.cells.reserve(ctx.cells.size());
+    for (auto& [_, cell] : ctx.cells) {
+      if (cell.validation(ctx_json.config)) {
+        ctx_json.cells.push_back(cell);
+      }
+    }
+
+    ctx_json.bacterias = {};
+    ctx_json.bacterias.reserve(ctx.bacterias.size());
+    for (auto& [_, bacteria] : ctx.bacterias) {
+      if (bacteria->validation(ctx_json.config)) {
+        ctx_json.bacterias.push_back(*bacteria);
+      }
+    }
+
     nlohmann::json json;
-    ctx.save(json);
-    utils_t::save(json, ctx.file_name);
+    json = ctx_json;
+    utils_t::save(json, file_name);
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -890,7 +889,7 @@ int main(int argc, char* argv[]) {
   using namespace genesis_n;
 
   world_t world;
-  world.ctx.file_name = file_name;
+  world.file_name = file_name;
   world.init();
 
   while (true) {
@@ -898,6 +897,8 @@ int main(int argc, char* argv[]) {
     world.save();
     break;
   }
+
+  std::cout << "end" << std::endl;
 
   return 0;
 }
