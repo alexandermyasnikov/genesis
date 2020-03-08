@@ -120,14 +120,14 @@ namespace genesis_n {
     double        sigma             = {};
     double        coef              = {};
 
-    bool validation(const config_t& config); // TODO
+    bool validation(const config_t& config);
   };
 
   struct recipe_item_t {
     std::string   name    = {};
     uint64_t      count   = {};
 
-    bool validation(const config_t& config); // TODO
+    bool validation(const config_t& config);
   };
 
   struct recipe_t {
@@ -139,7 +139,7 @@ namespace genesis_n {
     in_t          in                = {};
     out_t         out               = {};
 
-    bool validation(const config_t& config); // TODO
+    bool validation(const config_t& config);
   };
 
   struct cell_pipe_t {
@@ -154,7 +154,7 @@ namespace genesis_n {
     uint64_t   id      = {};
     uint64_t   value   = {};
 
-    bool validation(const config_t& config); // XXX
+    bool validation(const config_t& config);
   };
 
   struct cell_t {
@@ -400,6 +400,24 @@ namespace genesis_n {
 
   ////////////////////////////////////////////////////////////////////////////////
 
+  bool resource_info_t::validation(const config_t&) {
+    TRACE_GENESIS;
+
+    if (!id) {
+      LOG_GENESIS(ERROR, "invalid resource_info_t::id %zd", id);
+      return false;
+    }
+
+    if (name.empty()) {
+      LOG_GENESIS(ERROR, "invalid resource_info_t::name %s", name.c_str());
+      return false;
+    }
+
+    return true;
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
   bool bacteria_t::validation(const config_t& config) {
     TRACE_GENESIS;
 
@@ -410,8 +428,10 @@ namespace genesis_n {
 
     rip %= config.code_size;
 
-    if (pos >= config.position_max)
+    if (pos >= config.position_max) {
+      LOG_GENESIS(ERROR, "invalid bacteria_t::pos %zd", pos);
       return false;
+    }
 
     return true;
   }
@@ -421,12 +441,123 @@ namespace genesis_n {
   bool cell_t::validation(const config_t& config) {
     TRACE_GENESIS;
 
-    if (pos >= config.position_max)
+    if (pos >= config.position_max) {
+      LOG_GENESIS(ERROR, "invalid cell_t::pos %zd", pos);
       return false;
+    }
 
     // health
-    // type
+
+    if (!type) {
+      LOG_GENESIS(ERROR, "invalid cell_t::type %zd", type);
+      return false;
+    }
+
     // resources
+
+    return true;
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  bool area_t::validation(const config_t& config) {
+    TRACE_GENESIS;
+
+    if (name.empty()) {
+      LOG_GENESIS(ERROR, "invalid area_t::name %s", name.c_str());
+      return false;
+    }
+
+    if (resource.empty()) {
+      LOG_GENESIS(ERROR, "invalid area_t::resource %s", resource.c_str());
+      return false;
+    }
+
+    if (std::find_if(config.resources.begin(), config.resources.end(),
+          [this] (const auto& resource_info) { return resource_info.name == resource; })
+        == config.resources.end())
+    {
+      LOG_GENESIS(ERROR, "invalid area_t::resource %s", resource.c_str());
+      return false;
+    }
+
+    // x0 x1 y0 y1
+
+    // radius
+    // mean
+
+    if (sigma <= 0) {
+      LOG_GENESIS(ERROR, "invalid area_t::sigma %f", sigma);
+      return false;
+    }
+
+    if (coef <= 0) {
+      LOG_GENESIS(ERROR, "invalid area_t::sigma %f", coef);
+      return false;
+    }
+
+    return true;
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  bool recipe_item_t::validation(const config_t& config) {
+    TRACE_GENESIS;
+
+    if (name.empty()) {
+      LOG_GENESIS(ERROR, "invalid recipe_item_t::name %s", name.c_str());
+      return false;
+    }
+
+    if (std::find_if(config.resources.begin(), config.resources.end(),
+          [this] (const auto& resource_info) { return resource_info.name == name; })
+        == config.resources.end())
+    {
+      LOG_GENESIS(ERROR, "invalid recipe_item_t::name %s", name.c_str());
+      return false;
+    }
+
+    if (!count) {
+      LOG_GENESIS(ERROR, "invalid recipe_item_t::count %s", count);
+      return false;
+    }
+
+    return true;
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  bool recipe_t::validation(const config_t& config) {
+    TRACE_GENESIS;
+
+    if (!id) {
+      LOG_GENESIS(ERROR, "invalid recipe_t::id %zd", id);
+      return false;
+    }
+
+    if (name.empty()) {
+      LOG_GENESIS(ERROR, "invalid recipe_t::name %s", name.c_str());
+      return false;
+    }
+
+    for (auto& recipe_item : in) {
+      if (!recipe_item.validation(config)) {
+        LOG_GENESIS(ERROR, "invalid recipe_t::in");
+        return false;
+      }
+    }
+
+    for (auto& recipe_item : out) {
+      if (!recipe_item.validation(config)) {
+        LOG_GENESIS(ERROR, "invalid recipe_t::out");
+        return false;
+      }
+    }
+
+    if (in.empty() && out.empty()) {
+      LOG_GENESIS(ERROR, "invalid recipe_t::[in, out]");
+      return false;
+    }
 
     return true;
   }
@@ -436,6 +567,63 @@ namespace genesis_n {
   bool config_t::validation() {
     TRACE_GENESIS;
     position_max = (position_max / position_n) * position_n;
+
+    if (position_n > 1000) {
+      LOG_GENESIS(ERROR, "invalid config_t::position_n %zd", position_n);
+      return false;
+    }
+
+    if (position_max > 1000 * 1000) {
+      LOG_GENESIS(ERROR, "invalid config_t::position_max %zd", position_max);
+      return false;
+    }
+
+    if (code_size > 1000) {
+      LOG_GENESIS(ERROR, "invalid config_t::code_size %zd", code_size);
+      return false;
+    }
+
+    if (debug.size() > 100) {
+      LOG_GENESIS(ERROR, "invalid config_t::debug %zd", debug.size());
+      return false;
+    }
+
+    if (resources.size() > 100) {
+      LOG_GENESIS(ERROR, "invalid config_t::resources %zd", resources.size());
+      return false;
+    }
+
+    for (auto& resource : resources) {
+      if (!resource.validation(*this)) {
+        LOG_GENESIS(ERROR, "invalid config_t::resources");
+        return false;
+      }
+    }
+
+    if (areas.size() > 100) {
+      LOG_GENESIS(ERROR, "invalid config_t::areas %zd", areas.size());
+      return false;
+    }
+
+    for (auto& area : areas) {
+      if (!area.validation(*this)) {
+        LOG_GENESIS(ERROR, "invalid config_t::area");
+        return false;
+      }
+    }
+
+    if (recipes.size() > 100) {
+      LOG_GENESIS(ERROR, "invalid config_t::recipes %zd", recipes.size());
+      return false;
+    }
+
+    for (auto& recipe : recipes) {
+      if (!recipe.validation(*this)) {
+        LOG_GENESIS(ERROR, "invalid config_t::recipe");
+        return false;
+      }
+    }
+
     return true;
   }
 
@@ -452,6 +640,7 @@ namespace genesis_n {
     JSON_LOAD(json, config);
     if (!config.validation()) {
       LOG_GENESIS(ERROR, "invalid config");
+      throw std::runtime_error("TODO invalid config");
     }
 
     cells.assign(config.position_max, {});
@@ -588,7 +777,7 @@ namespace genesis_n {
     { // XXX
       auto bacteria = std::make_shared<bacteria_t>();
       bacteria->pos = 11;
-      if (bacteria->validation(ctx.config))
+      if (bacteria->validation(ctx.config) && !ctx.bacterias[bacteria->pos])
         ctx.bacterias[bacteria->pos] = bacteria;
     }
 
