@@ -72,23 +72,28 @@
       "age": 0,
       "pipes": [],
       "pos": 7,
-      "resources": [],
+      "recipes": [
+        "sun_energy"
+      ],
+      "resources": [
+        {
+          "name": "energy",
+          "value": 11
+        }
+      ],
       "type": "extractor"
     }
   ],
   "config": {
     "areas": [
       {
-        "coef": 100.0,
-        "mean": 15.0,
+        "factor": 1.0,
         "name": "sun_area",
-        "radius": 0.1,
+        "radius": 10,
         "resource": "energy",
-        "sigma": 10.0,
-        "x0": 10,
-        "x1": 20,
-        "y0": 5,
-        "y1": 15
+        "sigma": 2.0,
+        "x": 10,
+        "y": 15
       }
     ],
     "code_size": 16,
@@ -103,6 +108,22 @@
     "recipes": [
       {
         "id": 1,
+        "in": [
+          {
+            "count": 1,
+            "name": "energy"
+          }
+        ],
+        "name": "sun_energy",
+        "out": [
+          {
+            "count": 100,
+            "name": "energy"
+          }
+        ]
+      },
+      {
+        "id": 2,
         "in": [
           {
             "count": 10,

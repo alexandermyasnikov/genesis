@@ -124,16 +124,18 @@ namespace genesis_n {
   };
 
   struct area_t {
+    // Для типа EXTRACTOR количество добытого ресурса вычистяется по формуле
+    //    y = factor * max(0, 1 - |t / radius| ^ sigma)
+    //    t = ((x - x1) ^ 2 + (y - y1) ^ 2) ^ 0.5 - расстояние до центра источника
+    //    y = (uint64_t) y * out.count
+
     std::string   name              = {};
     std::string   resource          = {};
-    uint64_t      x0                = utils_t::npos;
-    uint64_t      x1                = utils_t::npos;
-    uint64_t      y0                = utils_t::npos;
-    uint64_t      y1                = utils_t::npos;
-    double        radius            = -1;
-    double        mean              = 0;
-    double        sigma             = -1;
-    double        coef              = -1;
+    uint64_t      x                 = utils_t::npos;
+    uint64_t      y                 = utils_t::npos;
+    uint64_t      radius            = utils_t::npos;
+    double        factor            = 1;
+    double        sigma             = 2;
 
     bool validation(const config_t& config);
   };
@@ -173,14 +175,16 @@ namespace genesis_n {
   };
 
   struct cell_t {
-    using resources_t = std::vector<resource_t>;
-    using pipes_t     = std::vector<cell_pipe_t>;
+    using resources_t   = std::vector<resource_t>;
+    using pipes_t       = std::vector<cell_pipe_t>;
+    using recipes_t     = std::set<std::string>;
 
     uint64_t      pos              = utils_t::npos;
     uint64_t      age              = 0;
     std::string   type             = {};
     resources_t   resources        = {};
     pipes_t       pipes            = {};
+    recipes_t     recipes          = {};
 
     bool validation(const config_t& config);
   };
@@ -257,28 +261,22 @@ namespace genesis_n {
     TRACE_GENESIS;
     JSON_SAVE2(json, area, name);
     JSON_SAVE2(json, area, resource);
-    JSON_SAVE2(json, area, x0);
-    JSON_SAVE2(json, area, x1);
-    JSON_SAVE2(json, area, y0);
-    JSON_SAVE2(json, area, y1);
+    JSON_SAVE2(json, area, x);
+    JSON_SAVE2(json, area, y);
     JSON_SAVE2(json, area, radius);
-    JSON_SAVE2(json, area, mean);
+    JSON_SAVE2(json, area, factor);
     JSON_SAVE2(json, area, sigma);
-    JSON_SAVE2(json, area, coef);
   }
 
   inline void from_json(const nlohmann::json& json, area_t& area) {
     TRACE_GENESIS;
     JSON_LOAD2(json, area, name);
     JSON_LOAD2(json, area, resource);
-    JSON_LOAD2(json, area, x0);
-    JSON_LOAD2(json, area, x1);
-    JSON_LOAD2(json, area, y0);
-    JSON_LOAD2(json, area, y1);
+    JSON_LOAD2(json, area, x);
+    JSON_LOAD2(json, area, y);
     JSON_LOAD2(json, area, radius);
-    JSON_LOAD2(json, area, mean);
+    JSON_LOAD2(json, area, factor);
     JSON_LOAD2(json, area, sigma);
-    JSON_LOAD2(json, area, coef);
   }
 
   inline void to_json(nlohmann::json& json, const recipe_item_t& recipe_item) {
@@ -366,6 +364,7 @@ namespace genesis_n {
     JSON_SAVE2(json, cell, type);
     JSON_SAVE2(json, cell, resources);
     JSON_SAVE2(json, cell, pipes);
+    JSON_SAVE2(json, cell, recipes);
   }
 
   inline void from_json(const nlohmann::json& json, cell_t& cell) {
@@ -375,6 +374,7 @@ namespace genesis_n {
     JSON_LOAD2(json, cell, type);
     JSON_LOAD2(json, cell, resources);
     JSON_LOAD2(json, cell, pipes);
+    JSON_LOAD2(json, cell, recipes);
   }
 
   inline void to_json(nlohmann::json& json, const bacteria_t& bacteria) {
@@ -474,6 +474,16 @@ namespace genesis_n {
       }
     }
 
+    for (auto& recipe_name : recipes) {
+      if (std::find_if(config.recipes.begin(), config.recipes.end(),
+            [recipe_name] (const auto& recipe) { return recipe.name == recipe_name; })
+          == config.recipes.end())
+      {
+        LOG_GENESIS(ERROR, "invalid cell_t::recipes %s", recipe_name.c_str());
+        return false;
+      }
+    }
+
     return true;
   }
 
@@ -495,25 +505,28 @@ namespace genesis_n {
       return false;
     }
 
-    if (x0 >= x1 || y0 >= y1) {
-      LOG_GENESIS(ERROR, "invalid area_t::pos %zd %zd %zd %zd", x0, x1, y0, y1);
+    if (x == utils_t::npos) {
+      LOG_GENESIS(ERROR, "invalid area_t::x %zd", x);
       return false;
     }
 
-    if (radius <= 0) {
-      LOG_GENESIS(ERROR, "invalid area_t::radius %f", radius);
+    if (y == utils_t::npos) {
+      LOG_GENESIS(ERROR, "invalid area_t::y %zd", y);
       return false;
     }
 
-    // mean
+    if (radius == utils_t::npos) {
+      LOG_GENESIS(ERROR, "invalid area_t::radius %zd", radius);
+      return false;
+    }
+
+    if (factor <= 0) {
+      LOG_GENESIS(ERROR, "invalid area_t::factor %f", factor);
+      return false;
+    }
 
     if (sigma <= 0) {
       LOG_GENESIS(ERROR, "invalid area_t::sigma %f", sigma);
-      return false;
-    }
-
-    if (coef <= 0) {
-      LOG_GENESIS(ERROR, "invalid area_t::sigma %f", coef);
       return false;
     }
 
