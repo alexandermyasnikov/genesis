@@ -29,11 +29,10 @@
   * experience
   * [resource]
 * type
-  * extractor
-    * Пытается добыть ресурс
-    * area: y = radius * min(0, -1 + |(x - mean) / sigma| ^ 2)
   * resource_producer
     * При накоплении нужного количества ресурсов создается другой ресурс
+    * Если это природный ресурс используется формула
+      * y = factor * max(0, 1 - |t / radius| ^ sigma)
   * spore
     * При накоплении нужного количества ресурсов создается бактерия
   * defender

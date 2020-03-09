@@ -78,7 +78,6 @@ namespace genesis_n {
     inline static std::string DIR_RU           = "RU";
     inline static std::string DIR_RD           = "RD";
     inline static size_t npos                  = std::string::npos;
-    inline static std::string EXTRACTOR        = "extractor";
     inline static std::string PRODUCER         = "producer";
     inline static std::string SPORE            = "spore";
     inline static std::string DEFENDER         = "defender";
@@ -95,7 +94,13 @@ namespace genesis_n {
 
     inline static std::set<std::string> directions = {
         DIR_LN, DIR_RN, DIR_NU, DIR_ND, DIR_LU, DIR_LD, DIR_RU, DIR_RD };
-    inline static std::set<std::string> cell_types = { EXTRACTOR, PRODUCER, SPORE, DEFENDER, TRANSFER };
+    inline static std::set<std::string> cell_types = { PRODUCER, SPORE, DEFENDER, TRANSFER };
+
+    static uint64_t n(const config_t& config);
+    static uint64_t m(const config_t& config);
+    static std::pair<uint64_t, uint64_t> position_to_xy(const config_t& config, uint64_t position);
+    static uint64_t position_from_xy(const config_t& config, uint64_t x, uint64_t y);
+    static uint64_t distance(const config_t& config, uint64_t position, uint64_t x, uint64_t y);
 
     static void rename(const std::string& name_old, const std::string& name_new);
     static void remove(const std::string& name);
@@ -117,18 +122,18 @@ namespace genesis_n {
   using bacteria_sptr_t = std::shared_ptr<bacteria_t>;
 
   struct resource_info_t {
-    std::string   name        = {};
-    uint64_t      stack_size  = utils_t::npos;
-    // loss_factor
+    std::string   name          = {};
+    uint64_t      stack_size    = utils_t::npos;
+    bool          extractable   = false;
 
     bool validation(const config_t& config);
   };
 
   struct area_t {
-    // Для типа EXTRACTOR количество добытого ресурса вычистяется по формуле
+    // Количество добытого ресурса вычистяется по формуле
     //    y = factor * max(0, 1 - |t / radius| ^ sigma)
     //    t = ((x - x1) ^ 2 + (y - y1) ^ 2) ^ 0.5 - расстояние до центра источника
-    //    y = (uint64_t) y * out.count
+    //    y *= out.count
 
     std::string   name              = {};
     std::string   resource          = {};
@@ -251,12 +256,14 @@ namespace genesis_n {
     TRACE_GENESIS;
     JSON_SAVE2(json, resource_info, name);
     JSON_SAVE2(json, resource_info, stack_size);
+    JSON_SAVE2(json, resource_info, extractable);
   }
 
   inline void from_json(const nlohmann::json& json, resource_info_t& resource_info) {
     TRACE_GENESIS;
     JSON_LOAD2(json, resource_info, name);
     JSON_LOAD2(json, resource_info, stack_size);
+    JSON_LOAD2(json, resource_info, extractable);
   }
 
   inline void to_json(nlohmann::json& json, const area_t& area) {
@@ -420,6 +427,8 @@ namespace genesis_n {
       return false;
     }
 
+    // extractable
+
     return true;
   }
 
@@ -509,7 +518,7 @@ namespace genesis_n {
       return false;
     }
 
-    if (radius == utils_t::npos) {
+    if (!radius || radius == utils_t::npos) {
       LOG_GENESIS(ERROR, "invalid area_t::radius %zd", radius);
       return false;
     }
@@ -714,6 +723,47 @@ namespace genesis_n {
 
   ////////////////////////////////////////////////////////////////////////////////
 
+  uint64_t utils_t::n(const config_t& config) {
+    TRACE_GENESIS;
+    return config.position_n;
+  }
+
+  uint64_t utils_t::m(const config_t& config) {
+    TRACE_GENESIS;
+    return config.position_max / config.position_n;
+  }
+
+  std::pair<uint64_t, uint64_t> utils_t::position_to_xy(const config_t& config, uint64_t position) {
+    TRACE_GENESIS;
+    if (position > config.position_max) {
+      return {npos, npos};
+    }
+    uint64_t x = position % config.position_n;
+    uint64_t y = position / config.position_n;
+    return {x, y};
+  }
+
+  uint64_t utils_t::position_from_xy(const config_t& config, uint64_t x, uint64_t y) {
+    TRACE_GENESIS;
+    if (x >= n(config) || y >= m(config)) {
+      return npos;
+    }
+    return y * n(config) + x;
+  }
+
+  uint64_t utils_t::distance(const config_t& config, uint64_t position, uint64_t x, uint64_t y) {
+    TRACE_GENESIS;
+    LOG_GENESIS(ARGS, "position: %zd", position);
+    LOG_GENESIS(ARGS, "x, y: %zd %zd", x, y);
+    auto [x1, y1] = position_to_xy(config, position);
+    uint64_t ret = npos;
+    if (x1 != npos && y1 != npos) {
+      ret = std::pow(std::pow(x - x1, 2) + std::pow(y - y1, 2), 0.5);
+    }
+    LOG_GENESIS(ARGS, "ret: %zd", ret);
+    return ret;
+  }
+
   void utils_t::rename(const std::string& name_old, const std::string& name_new) {
     TRACE_GENESIS;
     LOG_GENESIS(ARGS, "name_old: %s", name_old.c_str());
@@ -800,9 +850,7 @@ namespace genesis_n {
       LOG_GENESIS(DEBUG, "cell.pos %zd", cell.pos);
       try {
         update_cell_total(cell);
-        if (cell.type == utils_t::EXTRACTOR) {
-          update_cell_producer(cell); // TODO
-        } else if (cell.type == utils_t::PRODUCER) {
+        if (cell.type == utils_t::PRODUCER) {
           update_cell_producer(cell);
         } else {
           LOG_GENESIS(ERROR, "unknown cell.type %s", cell.type);
@@ -887,10 +935,23 @@ namespace genesis_n {
           continue;
         }
 
-        auto& resource = cell.resources.at(recipe_item.name);
+        auto& cell_resource = cell.resources.at(recipe_item.name);
         const auto& resource_info = ctx_json.config.resources.at(cell_resource.name);
-        // TODO areas
-        cell_resource.count += recipe_item.count;
+        uint64_t count = recipe_item.count;
+
+        if (resource_info.extractable) {
+          double multiplier = {};
+          const auto& areas = ctx_json.config.areas.at(recipe_item.name);
+          for (const auto area : areas) {
+            uint64_t dist = utils_t::distance(ctx_json.config, cell.pos, area.x, area.y);
+            multiplier += area.factor * std::max(0., 1. - std::pow(std::abs((double) dist / area.radius), area.sigma));
+            LOG_GENESIS(DEBUG, "multiplier %f", multiplier);
+          }
+          count *= multiplier;
+          LOG_GENESIS(DEBUG, "count %zd", count);
+        }
+
+        cell_resource.count += count;
         cell_resource.count = std::min(cell_resource.count, resource_info.stack_size);
       }
     }
