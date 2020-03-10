@@ -25,7 +25,8 @@
   ],
   "cells": [
     {
-      "age": 9077,
+      "age": 9677,
+      "health": 100,
       "pipes": [
         {
           "direction": "R",
@@ -40,14 +41,15 @@
       ],
       "resources": {
         "energy": {
-          "count": 1000,
+          "count": 999,
           "name": "energy"
         }
       },
       "type": "producer"
     },
     {
-      "age": 5007,
+      "age": 5607,
+      "health": 100,
       "pipes": [
         {
           "direction": "D",
@@ -61,14 +63,15 @@
       ],
       "resources": {
         "energy": {
-          "count": 520,
+          "count": 0,
           "name": "energy"
         }
       },
       "type": "producer"
     },
     {
-      "age": 187,
+      "age": 787,
+      "health": 100,
       "pipes": [],
       "pos": 31,
       "recipes": [
@@ -76,7 +79,7 @@
       ],
       "resources": {
         "energy": {
-          "count": 121,
+          "count": 311,
           "name": "energy"
         }
       },
@@ -104,6 +107,7 @@
       "error",
       "trace"
     ],
+    "health_max": 100,
     "position_max": 400,
     "position_n": 20,
     "recipes": {

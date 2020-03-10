@@ -81,6 +81,7 @@ namespace genesis_n {
     inline static std::string PRODUCER         = "producer";
     inline static std::string SPORE            = "spore";
     inline static std::string DEFENDER         = "defender";
+    inline static std::string ENERGY           = "energy";
 
     inline static size_t seed = time(0);
 
@@ -186,6 +187,7 @@ namespace genesis_n {
 
     uint64_t      pos              = utils_t::npos;
     uint64_t      age              = 0;
+    uint64_t      health           = 0;
     std::string   type             = {};
     resources_t   resources        = {};
     pipes_t       pipes            = {};
@@ -204,6 +206,7 @@ namespace genesis_n {
     uint64_t      position_n         = 20;
     uint64_t      position_max       = 400;
     uint64_t      code_size          = 32;
+    uint64_t      health_max         = 100;
     debug_t       debug              = { utils_t::ERROR };
     resources_t   resources          = {};
     areas_t       areas              = {};
@@ -346,6 +349,7 @@ namespace genesis_n {
     JSON_SAVE2(json, config, position_n);
     JSON_SAVE2(json, config, position_max);
     JSON_SAVE2(json, config, code_size);
+    JSON_SAVE2(json, config, health_max);
     JSON_SAVE2(json, config, debug);
     JSON_SAVE2(json, config, resources);
     JSON_SAVE2(json, config, areas);
@@ -358,6 +362,7 @@ namespace genesis_n {
     JSON_LOAD2(json, config, position_n);
     JSON_LOAD2(json, config, position_max);
     JSON_LOAD2(json, config, code_size);
+    JSON_LOAD2(json, config, health_max);
     JSON_LOAD2(json, config, debug);
     JSON_LOAD2(json, config, resources);
     JSON_LOAD2(json, config, areas);
@@ -368,6 +373,7 @@ namespace genesis_n {
     TRACE_GENESIS;
     JSON_SAVE2(json, cell, pos);
     JSON_SAVE2(json, cell, age);
+    JSON_SAVE2(json, cell, health);
     JSON_SAVE2(json, cell, type);
     JSON_SAVE2(json, cell, resources);
     JSON_SAVE2(json, cell, pipes);
@@ -378,6 +384,7 @@ namespace genesis_n {
     TRACE_GENESIS;
     JSON_LOAD2(json, cell, pos);
     JSON_LOAD2(json, cell, age);
+    JSON_LOAD2(json, cell, health);
     JSON_LOAD2(json, cell, type);
     JSON_LOAD2(json, cell, resources);
     JSON_LOAD2(json, cell, pipes);
@@ -463,6 +470,8 @@ namespace genesis_n {
     }
 
     // age
+
+    health = std::min(health, config.health_max);
 
     if (!utils_t::cell_types.contains(type)) {
       LOG_GENESIS(ERROR, "invalid cell_t::type %s", type.c_str());
@@ -648,6 +657,11 @@ namespace genesis_n {
       return false;
     }
 
+    if (!health_max) {
+      LOG_GENESIS(ERROR, "invalid config_t::health_max %zd", health_max);
+      return false;
+    }
+
     if (debug.size() > 100) {
       LOG_GENESIS(ERROR, "invalid config_t::debug %zd", debug.size());
       return false;
@@ -656,6 +670,10 @@ namespace genesis_n {
     if (resources.empty() || resources.size() > 100) {
       LOG_GENESIS(ERROR, "invalid config_t::resources %zd", resources.size());
       return false;
+    }
+
+    if (!resources.contains(utils_t::ENERGY)) {
+      resources[utils_t::ENERGY] = {utils_t::ENERGY, 1000, true};
     }
 
     for (auto& [key, resource] : resources) {
@@ -889,16 +907,18 @@ namespace genesis_n {
     for (auto& [_, cell] : ctx.cells) {
       LOG_GENESIS(DEBUG, "cell.pos %zd", cell.pos);
       try {
-        update_cell_total(cell);
         if (cell.type == utils_t::PRODUCER) {
           update_cell_producer(cell);
         } else {
           LOG_GENESIS(ERROR, "unknown cell.type %s", cell.type);
         }
+        update_cell_total(cell);
       } catch (const std::exception& e) {
         LOG_GENESIS(ERROR, "exception %s", e.what());
       }
     }
+
+    std::erase_if(ctx.cells, [](const auto& kv) -> bool { return !kv.second.health; });
 
     for (auto& [_, bacteria] : ctx.bacterias) {
       if (!bacteria) {
