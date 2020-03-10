@@ -188,6 +188,7 @@ namespace genesis_n {
     uint64_t      pos              = utils_t::npos;
     uint64_t      age              = 0;
     uint64_t      health           = 0;
+    std::string   family           = {};
     std::string   type             = {};
     resources_t   resources        = {};
     pipes_t       pipes            = {};
@@ -374,6 +375,7 @@ namespace genesis_n {
     JSON_SAVE2(json, cell, pos);
     JSON_SAVE2(json, cell, age);
     JSON_SAVE2(json, cell, health);
+    JSON_SAVE2(json, cell, family);
     JSON_SAVE2(json, cell, type);
     JSON_SAVE2(json, cell, resources);
     JSON_SAVE2(json, cell, pipes);
@@ -385,6 +387,7 @@ namespace genesis_n {
     JSON_LOAD2(json, cell, pos);
     JSON_LOAD2(json, cell, age);
     JSON_LOAD2(json, cell, health);
+    JSON_LOAD2(json, cell, family);
     JSON_LOAD2(json, cell, type);
     JSON_LOAD2(json, cell, resources);
     JSON_LOAD2(json, cell, pipes);
@@ -472,6 +475,11 @@ namespace genesis_n {
     // age
 
     health = std::min(health, config.health_max);
+
+    if (family.empty()) {
+      LOG_GENESIS(ERROR, "invalid cell_t::family %s", family.c_str());
+      return false;
+    }
 
     if (!utils_t::cell_types.contains(type)) {
       LOG_GENESIS(ERROR, "invalid cell_t::type %s", type.c_str());
@@ -918,7 +926,11 @@ namespace genesis_n {
       }
     }
 
-    std::erase_if(ctx.cells, [](const auto& kv) -> bool { return !kv.second.health; });
+    std::erase_if(ctx.cells, [](const auto& kv) {
+        const auto& cell = kv.second;
+        return !cell.health
+          || (cell.resources.contains(utils_t::ENERGY)
+              && !cell.resources.at(utils_t::ENERGY).count); });
 
     for (auto& [_, bacteria] : ctx.bacterias) {
       if (!bacteria) {

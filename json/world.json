@@ -25,13 +25,14 @@
   ],
   "cells": [
     {
-      "age": 9677,
+      "age": 9887,
+      "family": "dev_test",
       "health": 100,
       "pipes": [
         {
           "direction": "R",
           "resource": "energy",
-          "velocity": 1
+          "velocity": 20
         }
       ],
       "pos": 10,
@@ -41,20 +42,21 @@
       ],
       "resources": {
         "energy": {
-          "count": 999,
+          "count": 196,
           "name": "energy"
         }
       },
       "type": "producer"
     },
     {
-      "age": 5607,
+      "age": 5817,
+      "family": "dev_test",
       "health": 100,
       "pipes": [
         {
           "direction": "D",
           "resource": "energy",
-          "velocity": 2
+          "velocity": 10
         }
       ],
       "pos": 11,
@@ -63,27 +65,51 @@
       ],
       "resources": {
         "energy": {
-          "count": 0,
+          "count": 460,
           "name": "energy"
         }
       },
       "type": "producer"
     },
     {
-      "age": 787,
+      "age": 997,
+      "family": "dev_test",
       "health": 100,
-      "pipes": [],
+      "pipes": [
+        {
+          "direction": "D",
+          "resource": "energy",
+          "velocity": 10
+        }
+      ],
       "pos": 31,
       "recipes": [
         "energy_loss"
       ],
       "resources": {
         "energy": {
-          "count": 311,
+          "count": 101,
           "name": "energy"
         }
       },
       "type": "producer"
+    },
+    {
+      "age": 997,
+      "family": "dev_test",
+      "health": 100,
+      "pipes": [],
+      "pos": 51,
+      "recipes": [
+        "energy_loss"
+      ],
+      "resources": {
+        "energy": {
+          "count": 651,
+          "name": "energy"
+        }
+      },
+      "type": "spore"
     }
   ],
   "config": {
@@ -92,7 +118,7 @@
         {
           "factor": 1.0,
           "name": "sun_area",
-          "radius": 20,
+          "radius": 25,
           "resource": "energy",
           "sigma": 2.0,
           "x": 15,
