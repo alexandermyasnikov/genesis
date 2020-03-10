@@ -25,12 +25,12 @@
   ],
   "cells": [
     {
-      "age": 4150,
+      "age": 7936,
       "pipes": {
-        "water": {
-          "direction": "LN",
-          "resource": "water",
-          "velocity": 1
+        "energy": {
+          "direction": "RN",
+          "resource": "energy",
+          "velocity": 3
         }
       },
       "pos": 10,
@@ -41,6 +41,21 @@
       "resources": {
         "energy": {
           "count": 1000,
+          "name": "energy"
+        }
+      },
+      "type": "producer"
+    },
+    {
+      "age": 3866,
+      "pipes": {},
+      "pos": 11,
+      "recipes": [
+        "energy_loss"
+      ],
+      "resources": {
+        "energy": {
+          "count": 999,
           "name": "energy"
         }
       },

@@ -101,6 +101,7 @@ namespace genesis_n {
     static std::pair<uint64_t, uint64_t> position_to_xy(const config_t& config, uint64_t position);
     static uint64_t position_from_xy(const config_t& config, uint64_t x, uint64_t y);
     static uint64_t distance(const config_t& config, uint64_t position, uint64_t x, uint64_t y);
+    static uint64_t position_next(const config_t& config, uint64_t position, const std::string& direction);
 
     static void rename(const std::string& name_old, const std::string& name_new);
     static void remove(const std::string& name);
@@ -181,7 +182,7 @@ namespace genesis_n {
 
   struct cell_t {
     using resources_t   = std::map<std::string/*name*/,     resource_t>;
-    using pipes_t       = std::map<std::string/*resource*/, cell_pipe_t>;
+    using pipes_t       = std::map<std::string/*resource*/, cell_pipe_t>; // TODO multimap
     using recipes_t     = std::set<std::string>;
 
     uint64_t      pos              = utils_t::npos;
@@ -724,12 +725,10 @@ namespace genesis_n {
   ////////////////////////////////////////////////////////////////////////////////
 
   uint64_t utils_t::n(const config_t& config) {
-    TRACE_GENESIS;
     return config.position_n;
   }
 
   uint64_t utils_t::m(const config_t& config) {
-    TRACE_GENESIS;
     return config.position_max / config.position_n;
   }
 
@@ -760,6 +759,48 @@ namespace genesis_n {
     if (x1 != npos && y1 != npos) {
       ret = std::pow(std::pow(x - x1, 2) + std::pow(y - y1, 2), 0.5);
     }
+    LOG_GENESIS(ARGS, "ret: %zd", ret);
+    return ret;
+  }
+
+  uint64_t utils_t::position_next(const config_t& config, uint64_t position, const std::string& direction) {
+    TRACE_GENESIS;
+    LOG_GENESIS(ARGS, "position: %zd", position);
+    LOG_GENESIS(ARGS, "direction: %s", direction.c_str());
+    uint64_t ret = npos;
+    auto [x, y] = position_to_xy(config, position);
+
+    if (x == npos || y == npos) {
+      return npos;
+    }
+
+    int dx = 0;
+    int dy = 0;
+    if (direction == DIR_LN) {
+      dx = -1;
+    } else if (direction == DIR_RN) {
+      dx = 1;
+    } else if (direction == DIR_NU) {
+      dy = -1;
+    } else if (direction == DIR_ND) {
+      dy = 1;
+    } else if (direction == DIR_LU) {
+      dx = -1;
+      dy = -1;
+    } else if (direction == DIR_LD) {
+      dx = -1;
+      dy = 1;
+    } else if (direction == DIR_RU) {
+      dx = 1;
+      dy = -1;
+    } else if (direction == DIR_RD) {
+      dx = 1;
+      dy = 1;
+    } else {
+      return npos;
+    }
+
+    ret = position_from_xy(config, x + dx, y + dy);
     LOG_GENESIS(ARGS, "ret: %zd", ret);
     return ret;
   }
@@ -872,7 +913,34 @@ namespace genesis_n {
   void world_t::update_cell_total(cell_t& cell) {
     TRACE_GENESIS;
 
-    // pipes
+    for (const auto& [_, pipe] : cell.pipes) {
+      if (!cell.resources.contains(pipe.resource)) {
+        continue;
+      }
+      auto& resource = cell.resources.at(pipe.resource);
+
+      uint64_t pos_next = utils_t::position_next(ctx_json.config, cell.pos, pipe.direction);
+      if (pos_next == utils_t::npos) {
+        continue;
+      }
+
+      if (!ctx.cells.contains(pos_next)) {
+        continue;
+      }
+      auto& cell_next = ctx.cells.at(pos_next);
+
+      if (!cell_next.resources.contains(pipe.resource)) {
+        continue;
+      }
+      auto& resource_next = cell_next.resources.at(pipe.resource);
+
+      uint64_t count = std::min(pipe.velocity, resource.count);
+      count = std::min(count, ctx_json.config.resources.at(pipe.resource).stack_size - resource_next.count);
+
+      resource.count -= count;
+      resource_next.count += count;
+      LOG_GENESIS(DEBUG, "count %zd", count);
+    }
 
     cell.age++;
   }
