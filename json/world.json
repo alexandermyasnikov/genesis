@@ -25,14 +25,14 @@
   ],
   "cells": [
     {
-      "age": 7936,
-      "pipes": {
-        "energy": {
-          "direction": "RN",
+      "age": 9077,
+      "pipes": [
+        {
+          "direction": "R",
           "resource": "energy",
-          "velocity": 3
+          "velocity": 1
         }
-      },
+      ],
       "pos": 10,
       "recipes": [
         "energy_loss",
@@ -47,15 +47,36 @@
       "type": "producer"
     },
     {
-      "age": 3866,
-      "pipes": {},
+      "age": 5007,
+      "pipes": [
+        {
+          "direction": "D",
+          "resource": "energy",
+          "velocity": 2
+        }
+      ],
       "pos": 11,
       "recipes": [
         "energy_loss"
       ],
       "resources": {
         "energy": {
-          "count": 999,
+          "count": 520,
+          "name": "energy"
+        }
+      },
+      "type": "producer"
+    },
+    {
+      "age": 187,
+      "pipes": [],
+      "pos": 31,
+      "recipes": [
+        "energy_loss"
+      ],
+      "resources": {
+        "energy": {
+          "count": 121,
           "name": "energy"
         }
       },

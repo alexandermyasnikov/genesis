@@ -69,10 +69,10 @@ namespace genesis_n {
     inline static std::string DEBUG            = "debug";
     inline static std::string MIND             = "mind ";
     inline static std::string TIME             = "time ";
-    inline static std::string DIR_LN           = "LN";
-    inline static std::string DIR_RN           = "RN";
-    inline static std::string DIR_NU           = "NU";
-    inline static std::string DIR_ND           = "ND";
+    inline static std::string DIR_L            = "L";
+    inline static std::string DIR_R            = "R";
+    inline static std::string DIR_U            = "U";
+    inline static std::string DIR_D            = "D";
     inline static std::string DIR_LU           = "LU";
     inline static std::string DIR_LD           = "LD";
     inline static std::string DIR_RU           = "RU";
@@ -81,7 +81,6 @@ namespace genesis_n {
     inline static std::string PRODUCER         = "producer";
     inline static std::string SPORE            = "spore";
     inline static std::string DEFENDER         = "defender";
-    inline static std::string TRANSFER         = "transfer";
 
     inline static size_t seed = time(0);
 
@@ -93,8 +92,8 @@ namespace genesis_n {
 #endif
 
     inline static std::set<std::string> directions = {
-        DIR_LN, DIR_RN, DIR_NU, DIR_ND, DIR_LU, DIR_LD, DIR_RU, DIR_RD };
-    inline static std::set<std::string> cell_types = { PRODUCER, SPORE, DEFENDER, TRANSFER };
+        DIR_L, DIR_R, DIR_U, DIR_D, DIR_LU, DIR_LD, DIR_RU, DIR_RD };
+    inline static std::set<std::string> cell_types = { PRODUCER, SPORE, DEFENDER };
 
     static uint64_t n(const config_t& config);
     static uint64_t m(const config_t& config);
@@ -181,8 +180,8 @@ namespace genesis_n {
   };
 
   struct cell_t {
-    using resources_t   = std::map<std::string/*name*/,     resource_t>;
-    using pipes_t       = std::map<std::string/*resource*/, cell_pipe_t>; // TODO multimap
+    using resources_t   = std::map<std::string/*name*/, resource_t>;
+    using pipes_t       = std::vector<cell_pipe_t>;
     using recipes_t     = std::set<std::string>;
 
     uint64_t      pos              = utils_t::npos;
@@ -477,8 +476,8 @@ namespace genesis_n {
       }
     }
 
-    for (auto& [key, pipe] : pipes) {
-      if (key != pipe.resource || !pipe.validation(config)) {
+    for (auto& pipe : pipes) {
+      if (!pipe.validation(config)) {
         LOG_GENESIS(ERROR, "invalid cell_t::pipes");
         return false;
       }
@@ -776,13 +775,13 @@ namespace genesis_n {
 
     int dx = 0;
     int dy = 0;
-    if (direction == DIR_LN) {
+    if (direction == DIR_L) {
       dx = -1;
-    } else if (direction == DIR_RN) {
+    } else if (direction == DIR_R) {
       dx = 1;
-    } else if (direction == DIR_NU) {
+    } else if (direction == DIR_U) {
       dy = -1;
-    } else if (direction == DIR_ND) {
+    } else if (direction == DIR_D) {
       dy = 1;
     } else if (direction == DIR_LU) {
       dx = -1;
@@ -913,7 +912,7 @@ namespace genesis_n {
   void world_t::update_cell_total(cell_t& cell) {
     TRACE_GENESIS;
 
-    for (const auto& [_, pipe] : cell.pipes) {
+    for (const auto& pipe : cell.pipes) {
       if (!cell.resources.contains(pipe.resource)) {
         continue;
       }
