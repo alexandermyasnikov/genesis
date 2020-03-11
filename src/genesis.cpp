@@ -222,23 +222,15 @@ namespace genesis_n {
     bool validation();
   };
 
-  struct context_json_t {
-    using cells_t       = std::vector<cell_t>;
-    using bacterias_t   = std::vector<bacteria_t>;
+  struct context_t {
+    using cells_t       = std::map<size_t/*pos*/, cell_t>;
+    using bacterias_t   = std::map<size_t/*pos*/, bacteria_sptr_t>;
 
     config_t      config        = {};
     cells_t       cells         = {};
     bacterias_t   bacterias     = {};
 
     bool validation();
-  };
-
-  struct context_t {
-    using cells_t       = std::map<size_t/*pos*/, cell_t>;
-    using bacterias_t   = std::map<size_t/*pos*/, bacteria_sptr_t>;
-
-    cells_t       cells            = {};
-    bacterias_t   bacterias        = {};
   };
 
   /*
@@ -248,9 +240,8 @@ namespace genesis_n {
   */
 
   struct world_t {
-    context_json_t   ctx_json;
-    context_t        ctx;
-    std::string      file_name;
+    context_t     ctx;
+    std::string   file_name;
 
     void update();
     void update_cell_total(cell_t& cell);
@@ -430,18 +421,46 @@ namespace genesis_n {
     }
   }
 
-  inline void to_json(nlohmann::json& json, const context_json_t& context_json) {
+  inline void to_json(nlohmann::json& json, const context_t& context) {
     TRACE_GENESIS;
-    JSON_SAVE2(json, context_json, config);
-    JSON_SAVE2(json, context_json, cells);
-    JSON_SAVE2(json, context_json, bacterias);
+    JSON_SAVE2(json, context, config);
+    {
+      std::vector<cell_t> cells;
+      cells.reserve(context.cells.size());
+      for (const auto& [_, cell] : context.cells) {
+        cells.push_back(cell);
+      }
+      JSON_SAVE(json, cells);
+    }
+    {
+      std::vector<bacteria_t> bacterias;
+      bacterias.reserve(context.bacterias.size());
+      for (const auto& [_, bacteria] : context.bacterias) {
+        if (bacteria) {
+          bacterias.push_back(*bacteria);
+        }
+      }
+      JSON_SAVE(json, bacterias);
+    }
   }
 
-  inline void from_json(const nlohmann::json& json, context_json_t& context_json) {
+  inline void from_json(const nlohmann::json& json, context_t& context) {
     TRACE_GENESIS;
-    JSON_LOAD2(json, context_json, config);
-    JSON_LOAD2(json, context_json, cells);
-    JSON_LOAD2(json, context_json, bacterias);
+    JSON_LOAD2(json, context, config);
+    {
+      std::vector<cell_t> cells;
+      JSON_LOAD(json, cells);
+      for (const auto& cell : cells) {
+        context.cells[cell.pos] = std::move(cell);
+      }
+    }
+    {
+      std::vector<bacteria_t> bacterias;
+      JSON_LOAD(json, bacterias);
+      for (const auto& bacteria : bacterias) {
+        context.bacterias[bacteria.pos] = std::make_shared<bacteria_t>(std::move(bacteria));
+      }
+    }
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -773,7 +792,7 @@ namespace genesis_n {
 
   ////////////////////////////////////////////////////////////////////////////////
 
-  bool context_json_t::validation() {
+  bool context_t::validation() {
     TRACE_GENESIS;
 
     if (!config.validation()) {
@@ -781,15 +800,15 @@ namespace genesis_n {
       return false;
     }
 
-    for (auto& cell : cells) {
-      if (!cell.validation(config)) {
+    for (auto& [key, cell] : cells) {
+      if (key != cell.pos || !cell.validation(config)) {
         LOG_GENESIS(ERROR, "invalid config_json_t::cells");
         return false;
       }
     }
 
-    for (auto& bacteria : bacterias) {
-      if (!bacteria.validation(config)) {
+    for (auto& [key, bacteria] : bacterias) {
+      if (!bacteria || key != bacteria->pos || !bacteria->validation(config)) {
         LOG_GENESIS(ERROR, "invalid config_json_t::bacterias");
         return false;
       }
@@ -1003,7 +1022,7 @@ namespace genesis_n {
       }
       auto& resource = cell.resources.at(pipe.resource);
 
-      uint64_t pos_next = utils_t::position_next(ctx_json.config, cell.pos, pipe.direction);
+      uint64_t pos_next = utils_t::position_next(ctx.config, cell.pos, pipe.direction);
       if (pos_next == utils_t::npos) {
         continue;
       }
@@ -1018,7 +1037,7 @@ namespace genesis_n {
       }
       auto& resource_next = cell_next.resources.at(pipe.resource);
 
-      uint64_t stack_size = ctx_json.config.resources.at(pipe.resource).stack_size;
+      uint64_t stack_size = ctx.config.resources.at(pipe.resource).stack_size;
       uint64_t count = std::min(pipe.velocity, resource.count);
       count = std::min(count, stack_size - resource_next.count);
 
@@ -1036,7 +1055,7 @@ namespace genesis_n {
     bool ret = false;
 
     for (const auto& recipe_name : cell.recipes) {
-      const auto& recipes = ctx_json.config.recipes;
+      const auto& recipes = ctx.config.recipes;
       if (!recipes.contains(recipe_name)) {
         LOG_GENESIS(ERROR, "recipe_name not found: %s", recipe_name.c_str());
         continue;
@@ -1053,7 +1072,7 @@ namespace genesis_n {
         }
 
         auto& cell_resource = cell.resources.at(recipe_item.name);
-        const auto& resource_info = ctx_json.config.resources.at(cell_resource.name);
+        const auto& resource_info = ctx.config.resources.at(cell_resource.name);
         if (cell_resource.count < resource_info.stack_size) {
           need_produce = true;
         }
@@ -1091,14 +1110,14 @@ namespace genesis_n {
         }
 
         auto& cell_resource = cell.resources.at(recipe_item.name);
-        const auto& resource_info = ctx_json.config.resources.at(cell_resource.name);
+        const auto& resource_info = ctx.config.resources.at(cell_resource.name);
         uint64_t count = recipe_item.count;
 
         if (resource_info.extractable) {
           double multiplier = {};
-          const auto& areas = ctx_json.config.areas.at(recipe_item.name);
+          const auto& areas = ctx.config.areas.at(recipe_item.name);
           for (const auto area : areas) {
-            uint64_t dist = utils_t::distance(ctx_json.config, cell.pos, area.x, area.y);
+            uint64_t dist = utils_t::distance(ctx.config, cell.pos, area.x, area.y);
             multiplier += area.factor * std::max(0., 1. - std::pow(std::abs((double) dist / area.radius), area.sigma));
             LOG_GENESIS(DEBUG, "multiplier %f", multiplier);
           }
@@ -1137,7 +1156,7 @@ namespace genesis_n {
     *bacteria = *cell.spore_bacteria;
     // TODO mutation
 
-    if (bacteria->validation(ctx_json.config)) {
+    if (bacteria->validation(ctx.config)) {
         ctx.bacterias[cell.pos] = bacteria;
     }
   }
@@ -1145,7 +1164,7 @@ namespace genesis_n {
   void world_t::init() {
     TRACE_GENESIS;
     load();
-    utils_t::debug = ctx_json.config.debug;
+    utils_t::debug = ctx.config.debug;
     save();
   }
 
@@ -1157,49 +1176,19 @@ namespace genesis_n {
       throw std::runtime_error("invalid json");
     }
 
-    ctx_json = json;
+    ctx = json;
 
-    if (!ctx_json.validation()) {
-      LOG_GENESIS(ERROR, "invalid config");
-      throw std::runtime_error("invalid config");
-    }
-
-    ctx.cells = {};
-    for (auto& cell : ctx_json.cells) {
-      if (cell.validation(ctx_json.config)) {
-        ctx.cells[cell.pos] = cell;
-      }
-    }
-
-    ctx.bacterias = {};
-    for (auto& bacteria : ctx_json.bacterias) {
-      if (bacteria.validation(ctx_json.config)) {
-        ctx.bacterias[bacteria.pos] = std::make_shared<bacteria_t>(bacteria);
-      }
+    if (!ctx.validation()) {
+      LOG_GENESIS(ERROR, "invalid context");
+      throw std::runtime_error("invalid context");
     }
   }
 
   void world_t::save() {
     TRACE_GENESIS;
 
-    ctx_json.cells = {};
-    ctx_json.cells.reserve(ctx.cells.size());
-    for (auto& [_, cell] : ctx.cells) {
-      if (cell.validation(ctx_json.config)) {
-        ctx_json.cells.push_back(cell);
-      }
-    }
-
-    ctx_json.bacterias = {};
-    ctx_json.bacterias.reserve(ctx.bacterias.size());
-    for (auto& [_, bacteria] : ctx.bacterias) {
-      if (bacteria->validation(ctx_json.config)) {
-        ctx_json.bacterias.push_back(*bacteria);
-      }
-    }
-
     nlohmann::json json;
-    json = ctx_json;
+    json = ctx;
     utils_t::save(json, file_name);
   }
 
