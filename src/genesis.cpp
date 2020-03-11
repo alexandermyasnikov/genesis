@@ -245,8 +245,10 @@ namespace genesis_n {
 
     void update();
     void update_cell_total(cell_t& cell);
-    bool update_cell_producer(cell_t& cell);
+    void update_cell_producer(cell_t& cell);
     void update_cell_spore(cell_t& cell);
+    void update_bacteria(bacteria_t& bacteria);
+    bool update_cell_recipe(cell_t& cell, const std::string& recipe_name);
     void init();
     void load();
     void save();
@@ -1009,7 +1011,7 @@ namespace genesis_n {
         continue;
       }
 
-      LOG_GENESIS(DEBUG, "bacteria.pos %zd", bacteria->pos);
+      update_bacteria(*bacteria);
     }
   }
 
@@ -1049,91 +1051,12 @@ namespace genesis_n {
     cell.age++;
   }
 
-  bool world_t::update_cell_producer(cell_t& cell) {
+  void world_t::update_cell_producer(cell_t& cell) {
     TRACE_GENESIS;
 
-    bool ret = false;
-
     for (const auto& recipe_name : cell.recipes) {
-      const auto& recipes = ctx.config.recipes;
-      if (!recipes.contains(recipe_name)) {
-        LOG_GENESIS(ERROR, "recipe_name not found: %s", recipe_name.c_str());
-        continue;
-      }
-
-      const auto& recipe = recipes.at(recipe_name);
-      LOG_GENESIS(DEBUG, "recipe_name %s", recipe.name.c_str());
-
-      bool need_produce = false;
-
-      for (const auto& [_, recipe_item] : recipe.out) {
-        if (!cell.resources.contains(recipe_item.name)) {
-          continue;
-        }
-
-        auto& cell_resource = cell.resources.at(recipe_item.name);
-        const auto& resource_info = ctx.config.resources.at(cell_resource.name);
-        if (cell_resource.count < resource_info.stack_size) {
-          need_produce = true;
-        }
-      }
-
-      need_produce = true;
-
-      for (const auto& [_, recipe_item] : recipe.in) {
-        if (!cell.resources.contains(recipe_item.name)) {
-          need_produce = false;
-          break;
-        }
-
-        const auto& cell_resource = cell.resources.at(recipe_item.name);
-        LOG_GENESIS(DEBUG, "resource.count %zd", cell_resource.count);
-        LOG_GENESIS(DEBUG, "recipe_item.count %zd", recipe_item.count);
-        if (cell_resource.count < recipe_item.count) {
-          need_produce = false;
-          break;
-        }
-      }
-
-      if (!need_produce) {
-        continue;
-      }
-
-      for (const auto& [_, recipe_item] : recipe.in) {
-        auto& cell_resource = cell.resources.at(recipe_item.name);
-        cell_resource.count -= recipe_item.count;
-      }
-
-      for (const auto& [_, recipe_item] : recipe.out) {
-        if (!cell.resources.contains(recipe_item.name)) {
-          continue;
-        }
-
-        auto& cell_resource = cell.resources.at(recipe_item.name);
-        const auto& resource_info = ctx.config.resources.at(cell_resource.name);
-        uint64_t count = recipe_item.count;
-
-        if (resource_info.extractable) {
-          double multiplier = {};
-          const auto& areas = ctx.config.areas.at(recipe_item.name);
-          for (const auto area : areas) {
-            uint64_t dist = utils_t::distance(ctx.config, cell.pos, area.x, area.y);
-            multiplier += area.factor * std::max(0., 1. - std::pow(std::abs((double) dist / area.radius), area.sigma));
-            LOG_GENESIS(DEBUG, "multiplier %f", multiplier);
-          }
-          count *= multiplier;
-          LOG_GENESIS(DEBUG, "count %zd", count);
-        }
-
-        count = std::min(count, resource_info.stack_size - cell_resource.count);
-        LOG_GENESIS(DEBUG, "count new %zd %zd", cell_resource.count, count);
-        cell_resource.count += count;
-      }
-
-      ret = true;
+      update_cell_recipe(cell, recipe_name);
     }
-
-    return ret;
   }
 
   void world_t::update_cell_spore(cell_t& cell) {
@@ -1143,8 +1066,10 @@ namespace genesis_n {
       return;
     }
 
-    if (!update_cell_producer(cell)) {
-      return;
+    for (const auto& recipe_name : cell.recipes) {
+      if (!update_cell_recipe(cell, recipe_name)) {
+        return;
+      }
     }
 
     if (!cell.spore_bacteria) {
@@ -1159,6 +1084,106 @@ namespace genesis_n {
     if (bacteria->validation(ctx.config)) {
         ctx.bacterias[cell.pos] = bacteria;
     }
+  }
+
+  void world_t::update_bacteria(bacteria_t& bacteria) {
+    TRACE_GENESIS;
+
+    uint8_t cmd = bacteria.code[(bacteria.rip++) % bacteria.code.size()];
+    LOG_GENESIS(DEBUG, "cmd: %zd", cmd);
+
+    // TODO
+    switch (cmd) {
+      case 0: {
+        LOG_GENESIS(DEBUG, "NOP");
+        break;
+      }
+      default: {
+        LOG_GENESIS(DEBUG, "NOTHING");
+        break;
+      }
+    }
+  }
+
+  bool world_t::update_cell_recipe(cell_t& cell, const std::string& recipe_name) {
+    TRACE_GENESIS;
+
+    const auto& recipes = ctx.config.recipes;
+    if (!recipes.contains(recipe_name)) {
+      LOG_GENESIS(ERROR, "recipe_name not found: %s", recipe_name.c_str());
+      return false;
+    }
+
+    const auto& recipe = recipes.at(recipe_name);
+    LOG_GENESIS(DEBUG, "recipe_name %s", recipe.name.c_str());
+
+    bool need_produce = false;
+
+    for (const auto& [_, recipe_item] : recipe.out) {
+      if (!cell.resources.contains(recipe_item.name)) {
+        continue;
+      }
+
+      auto& cell_resource = cell.resources.at(recipe_item.name);
+      const auto& resource_info = ctx.config.resources.at(cell_resource.name);
+      if (cell_resource.count < resource_info.stack_size) {
+        need_produce = true;
+      }
+    }
+
+    need_produce = true;
+
+    for (const auto& [_, recipe_item] : recipe.in) {
+      if (!cell.resources.contains(recipe_item.name)) {
+        need_produce = false;
+        break;
+      }
+
+      const auto& cell_resource = cell.resources.at(recipe_item.name);
+      LOG_GENESIS(DEBUG, "resource.count %zd", cell_resource.count);
+      LOG_GENESIS(DEBUG, "recipe_item.count %zd", recipe_item.count);
+      if (cell_resource.count < recipe_item.count) {
+        need_produce = false;
+        break;
+      }
+    }
+
+    if (!need_produce) {
+      return false;
+    }
+
+    for (const auto& [_, recipe_item] : recipe.in) {
+      auto& cell_resource = cell.resources.at(recipe_item.name);
+      cell_resource.count -= recipe_item.count;
+    }
+
+    for (const auto& [_, recipe_item] : recipe.out) {
+      if (!cell.resources.contains(recipe_item.name)) {
+        continue;
+      }
+
+      auto& cell_resource = cell.resources.at(recipe_item.name);
+      const auto& resource_info = ctx.config.resources.at(cell_resource.name);
+      uint64_t count = recipe_item.count;
+
+      if (resource_info.extractable) {
+        double multiplier = {};
+        const auto& areas = ctx.config.areas.at(recipe_item.name);
+        for (const auto area : areas) {
+          uint64_t dist = utils_t::distance(ctx.config, cell.pos, area.x, area.y);
+          multiplier += area.factor * std::max(0., 1. - std::pow(std::abs((double) dist / area.radius), area.sigma));
+          LOG_GENESIS(DEBUG, "multiplier %f", multiplier);
+        }
+        count *= multiplier;
+        LOG_GENESIS(DEBUG, "count %zd", count);
+      }
+
+      count = std::min(count, resource_info.stack_size - cell_resource.count);
+      LOG_GENESIS(DEBUG, "count new %zd %zd", cell_resource.count, count);
+      cell_resource.count += count;
+    }
+
+    return true;
   }
 
   void world_t::init() {
