@@ -111,13 +111,14 @@ namespace genesis_n {
   };
 
   struct bacteria_t {
-    using code_t = std::vector<uint8_t>;
+    using code_t      = std::vector<uint8_t>;
+    using registers_t = std::vector<uint8_t>;
 
-    uint64_t   family    = {}; // TODO
-    code_t     code      = {};
-    // registers_t registers = {}; // TODO
-    uint64_t   rip       = 0;
-    uint64_t   pos       = utils_t::npos;
+    std::string   family       = {};
+    code_t        code         = {};
+    registers_t   registers    = {};
+    uint64_t      rip          = 0;
+    uint64_t      pos          = utils_t::npos;
 
     bool validation(const config_t& config);
   };
@@ -211,6 +212,7 @@ namespace genesis_n {
     uint64_t      position_n         = 20;
     uint64_t      position_max       = 400;
     uint64_t      code_size          = 32;
+    uint64_t      registers_size     = 32;
     uint64_t      health_max         = 100;
     debug_t       debug              = { utils_t::ERROR };
     resources_t   resources          = {};
@@ -355,6 +357,7 @@ namespace genesis_n {
     JSON_SAVE2(json, config, position_n);
     JSON_SAVE2(json, config, position_max);
     JSON_SAVE2(json, config, code_size);
+    JSON_SAVE2(json, config, registers_size);
     JSON_SAVE2(json, config, health_max);
     JSON_SAVE2(json, config, debug);
     JSON_SAVE2(json, config, resources);
@@ -368,6 +371,7 @@ namespace genesis_n {
     JSON_LOAD2(json, config, position_n);
     JSON_LOAD2(json, config, position_max);
     JSON_LOAD2(json, config, code_size);
+    JSON_LOAD2(json, config, registers_size);
     JSON_LOAD2(json, config, health_max);
     JSON_LOAD2(json, config, debug);
     JSON_LOAD2(json, config, resources);
@@ -377,14 +381,18 @@ namespace genesis_n {
 
   inline void to_json(nlohmann::json& json, const bacteria_t& bacteria) {
     TRACE_GENESIS;
+    JSON_SAVE2(json, bacteria, family);
     JSON_SAVE2(json, bacteria, code);
+    JSON_SAVE2(json, bacteria, registers);
     JSON_SAVE2(json, bacteria, rip);
     JSON_SAVE2(json, bacteria, pos);
   }
 
   inline void from_json(const nlohmann::json& json, bacteria_t& bacteria) {
     TRACE_GENESIS;
+    JSON_LOAD2(json, bacteria, family);
     JSON_LOAD2(json, bacteria, code);
+    JSON_LOAD2(json, bacteria, registers);
     JSON_LOAD2(json, bacteria, rip);
     JSON_LOAD2(json, bacteria, pos);
   }
@@ -461,12 +469,22 @@ namespace genesis_n {
   bool bacteria_t::validation(const config_t& config) {
     TRACE_GENESIS;
 
+    if (family.empty()) {
+      LOG_GENESIS(ERROR, "invalid bacteria_t::family %s", family.c_str());
+      return false;
+    }
+
     while (code.size() < config.code_size) {
       code.push_back(utils_t::rand_u64() % 0xFF);
     }
     code.resize(config.code_size);
 
     rip %= config.code_size;
+
+    while (registers.size() < config.registers_size) {
+      registers.push_back(utils_t::rand_u64() % 0xFF);
+    }
+    registers.resize(config.registers_size);
 
     if (pos >= config.position_max) {
       LOG_GENESIS(ERROR, "invalid bacteria_t::pos %zd", pos);
@@ -527,7 +545,9 @@ namespace genesis_n {
     }
 
     if (spore_bacteria) {
-      if (spore_bacteria->pos != pos || !spore_bacteria->validation(config)) {
+      if (spore_bacteria->pos != pos
+          || spore_bacteria->family != family
+          || !spore_bacteria->validation(config)) {
         LOG_GENESIS(ERROR, "invalid cell_t::spore_bacteria");
         return false;
       }
@@ -688,6 +708,11 @@ namespace genesis_n {
 
     if (code_size < 5 || code_size > 1000) {
       LOG_GENESIS(ERROR, "invalid config_t::code_size %zd", code_size);
+      return false;
+    }
+
+    if (registers_size < 5 || registers_size > 1000) {
+      LOG_GENESIS(ERROR, "invalid config_t::registers_size %zd", registers_size);
       return false;
     }
 

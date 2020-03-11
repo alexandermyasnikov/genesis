@@ -19,7 +19,26 @@
         248,
         206
       ],
+      "family": "dev_test",
       "pos": 11,
+      "registers": [
+        226,
+        214,
+        60,
+        48,
+        71,
+        156,
+        144,
+        146,
+        160,
+        226,
+        200,
+        228,
+        41,
+        57,
+        58,
+        52
+      ],
       "rip": 0
     },
     {
@@ -41,13 +60,32 @@
         248,
         206
       ],
+      "family": "dev_test",
       "pos": 51,
+      "registers": [
+        65,
+        143,
+        70,
+        26,
+        214,
+        132,
+        214,
+        18,
+        50,
+        41,
+        135,
+        46,
+        215,
+        19,
+        68,
+        157
+      ],
       "rip": 0
     }
   ],
   "cells": [
     {
-      "age": 18154,
+      "age": 18494,
       "family": "dev_test",
       "health": 100,
       "pipes": [
@@ -71,7 +109,7 @@
       "type": "producer"
     },
     {
-      "age": 14084,
+      "age": 14424,
       "family": "dev_test",
       "health": 100,
       "pipes": [
@@ -94,7 +132,7 @@
       "type": "producer"
     },
     {
-      "age": 9264,
+      "age": 9604,
       "family": "dev_test",
       "health": 100,
       "pipes": [
@@ -117,7 +155,7 @@
       "type": "producer"
     },
     {
-      "age": 9264,
+      "age": 9604,
       "family": "dev_test",
       "health": 100,
       "pipes": [],
@@ -150,7 +188,26 @@
           248,
           206
         ],
+        "family": "dev_test",
         "pos": 51,
+        "registers": [
+          64,
+          97,
+          240,
+          75,
+          130,
+          47,
+          157,
+          38,
+          244,
+          254,
+          21,
+          245,
+          211,
+          145,
+          81,
+          170
+        ],
         "rip": 0
       },
       "type": "spore"
@@ -226,6 +283,7 @@
         }
       }
     },
+    "registers_size": 16,
     "resources": {
       "energy": {
         "extractable": true,
