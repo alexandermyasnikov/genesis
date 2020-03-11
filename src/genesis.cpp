@@ -1097,8 +1097,89 @@ namespace genesis_n {
       case 0: {
         LOG_GENESIS(DEBUG, "NOP");
         break;
-      }
-      default: {
+
+      } case 1: {
+        LOG_GENESIS(DEBUG, "RET");
+        bacteria.rip = 0;
+        break;
+
+      } case 2: {
+        uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        LOG_GENESIS(DEBUG, "BR <%%%d>", arg1);
+        bacteria.rip += bacteria.registers[arg1];
+        break;
+
+      } case 3: {
+        uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        uint8_t arg2 = bacteria.code[(bacteria.rip++) % bacteria.code.size()];
+        LOG_GENESIS(DEBUG, "SET <%%%d> <%d>", arg1, arg2);
+        bacteria.registers[arg1] = arg2;
+        break;
+
+      } case 4: {
+        uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        uint8_t arg2 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        LOG_GENESIS(DEBUG, "MOV <%%%d> <%%%d>", arg1, arg2);
+        bacteria.registers[arg1] = bacteria.registers[arg2];
+        break;
+
+      } case 5: {
+        uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        uint8_t arg2 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        uint8_t arg3 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        LOG_GENESIS(DEBUG, "ADD <%%%d> <%%%d> <%%%d>", arg1, arg2, arg3);
+        bacteria.registers[arg1] = bacteria.registers[arg2] + bacteria.registers[arg3];
+        break;
+
+      } case 6: {
+        uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        uint8_t arg2 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        uint8_t arg3 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        LOG_GENESIS(DEBUG, "SUB <%%%d> <%%%d> <%%%d>", arg1, arg2, arg3);
+        bacteria.registers[arg1] = bacteria.registers[arg2] - bacteria.registers[arg3];
+        break;
+
+        // MULT
+        // DIV
+        // IF
+
+      } case 32: {
+        uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        LOG_GENESIS(DEBUG, "MOVE <%%%d>", arg1);
+        // TODO
+        break;
+
+      } case 33: {
+        uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        LOG_GENESIS(DEBUG, "GET RESOURCE <%%%d>", arg1);
+        // TODO
+        break;
+
+      } case 34: {
+        uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        LOG_GENESIS(DEBUG, "DELETE CELL <%%%d>", arg1);
+        // TODO
+        break;
+
+      } case 35: {
+        uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        LOG_GENESIS(DEBUG, "NEW CELL PRODUCER <%%%d>", arg1);
+        // TODO
+        break;
+
+      } case 36: {
+        uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        LOG_GENESIS(DEBUG, "NEW CELL SPORE <%%%d>", arg1);
+        // TODO
+        break;
+
+      } case 37: {
+        uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        LOG_GENESIS(DEBUG, "MUTATION <%%%d>", arg1);
+        // TODO
+        break;
+
+      } default: {
         LOG_GENESIS(DEBUG, "NOTHING");
         break;
       }
@@ -1244,7 +1325,7 @@ int main(int argc, char* argv[]) {
   world.file_name = file_name;
   world.init();
 
-  for (size_t i{}; i < 10; ++i) {
+  for (size_t i{}; i < 100; ++i) {
     world.update();
     world.save();
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
