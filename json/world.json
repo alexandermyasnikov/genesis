@@ -21,11 +21,33 @@
       ],
       "pos": 11,
       "rip": 0
+    },
+    {
+      "code": [
+        187,
+        67,
+        236,
+        228,
+        119,
+        212,
+        152,
+        228,
+        215,
+        208,
+        20,
+        254,
+        113,
+        79,
+        248,
+        206
+      ],
+      "pos": 51,
+      "rip": 0
     }
   ],
   "cells": [
     {
-      "age": 9887,
+      "age": 18154,
       "family": "dev_test",
       "health": 100,
       "pipes": [
@@ -42,14 +64,14 @@
       ],
       "resources": {
         "energy": {
-          "count": 196,
+          "count": 998,
           "name": "energy"
         }
       },
       "type": "producer"
     },
     {
-      "age": 5817,
+      "age": 14084,
       "family": "dev_test",
       "health": 100,
       "pipes": [
@@ -65,14 +87,14 @@
       ],
       "resources": {
         "energy": {
-          "count": 460,
+          "count": 998,
           "name": "energy"
         }
       },
       "type": "producer"
     },
     {
-      "age": 997,
+      "age": 9264,
       "family": "dev_test",
       "health": 100,
       "pipes": [
@@ -88,14 +110,14 @@
       ],
       "resources": {
         "energy": {
-          "count": 101,
+          "count": 999,
           "name": "energy"
         }
       },
       "type": "producer"
     },
     {
-      "age": 997,
+      "age": 9264,
       "family": "dev_test",
       "health": 100,
       "pipes": [],
@@ -105,9 +127,31 @@
       ],
       "resources": {
         "energy": {
-          "count": 651,
+          "count": 1000,
           "name": "energy"
         }
+      },
+      "spore_bacteria": {
+        "code": [
+          187,
+          67,
+          236,
+          228,
+          119,
+          212,
+          152,
+          228,
+          215,
+          208,
+          20,
+          254,
+          113,
+          79,
+          248,
+          206
+        ],
+        "pos": 51,
+        "rip": 0
       },
       "type": "spore"
     }
@@ -118,7 +162,7 @@
         {
           "factor": 1.0,
           "name": "sun_area",
-          "radius": 25,
+          "radius": 30,
           "resource": "energy",
           "sigma": 2.0,
           "x": 15,

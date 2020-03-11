@@ -113,7 +113,9 @@ namespace genesis_n {
   struct bacteria_t {
     using code_t = std::vector<uint8_t>;
 
+    uint64_t   family    = {}; // TODO
     code_t     code      = {};
+    // registers_t registers = {}; // TODO
     uint64_t   rip       = 0;
     uint64_t   pos       = utils_t::npos;
 
@@ -181,18 +183,20 @@ namespace genesis_n {
   };
 
   struct cell_t {
-    using resources_t   = std::map<std::string/*name*/, resource_t>;
-    using pipes_t       = std::vector<cell_pipe_t>;
-    using recipes_t     = std::set<std::string>;
+    using resources_t        = std::map<std::string/*name*/, resource_t>;
+    using pipes_t            = std::vector<cell_pipe_t>;
+    using recipes_t          = std::set<std::string>;
+    using spore_bacteria_t   = std::shared_ptr<bacteria_t>;
 
-    uint64_t      pos              = utils_t::npos;
-    uint64_t      age              = 0;
-    uint64_t      health           = 0;
-    std::string   family           = {};
-    std::string   type             = {};
-    resources_t   resources        = {};
-    pipes_t       pipes            = {};
-    recipes_t     recipes          = {};
+    uint64_t            pos              = utils_t::npos;
+    uint64_t            age              = 0;
+    uint64_t            health           = 0;
+    std::string         family           = {};
+    std::string         type             = {};
+    resources_t         resources        = {};
+    pipes_t             pipes            = {};
+    recipes_t           recipes          = {};
+    spore_bacteria_t    spore_bacteria   = {};
 
     bool validation(const config_t& config);
   };
@@ -248,7 +252,8 @@ namespace genesis_n {
 
     void update();
     void update_cell_total(cell_t& cell);
-    void update_cell_producer(cell_t& cell);
+    bool update_cell_producer(cell_t& cell);
+    void update_cell_spore(cell_t& cell);
     void init();
     void load();
     void save();
@@ -370,30 +375,6 @@ namespace genesis_n {
     JSON_LOAD2(json, config, recipes);
   }
 
-  inline void to_json(nlohmann::json& json, const cell_t& cell) {
-    TRACE_GENESIS;
-    JSON_SAVE2(json, cell, pos);
-    JSON_SAVE2(json, cell, age);
-    JSON_SAVE2(json, cell, health);
-    JSON_SAVE2(json, cell, family);
-    JSON_SAVE2(json, cell, type);
-    JSON_SAVE2(json, cell, resources);
-    JSON_SAVE2(json, cell, pipes);
-    JSON_SAVE2(json, cell, recipes);
-  }
-
-  inline void from_json(const nlohmann::json& json, cell_t& cell) {
-    TRACE_GENESIS;
-    JSON_LOAD2(json, cell, pos);
-    JSON_LOAD2(json, cell, age);
-    JSON_LOAD2(json, cell, health);
-    JSON_LOAD2(json, cell, family);
-    JSON_LOAD2(json, cell, type);
-    JSON_LOAD2(json, cell, resources);
-    JSON_LOAD2(json, cell, pipes);
-    JSON_LOAD2(json, cell, recipes);
-  }
-
   inline void to_json(nlohmann::json& json, const bacteria_t& bacteria) {
     TRACE_GENESIS;
     JSON_SAVE2(json, bacteria, code);
@@ -406,6 +387,39 @@ namespace genesis_n {
     JSON_LOAD2(json, bacteria, code);
     JSON_LOAD2(json, bacteria, rip);
     JSON_LOAD2(json, bacteria, pos);
+  }
+
+  inline void to_json(nlohmann::json& json, const cell_t& cell) {
+    TRACE_GENESIS;
+    JSON_SAVE2(json, cell, pos);
+    JSON_SAVE2(json, cell, age);
+    JSON_SAVE2(json, cell, health);
+    JSON_SAVE2(json, cell, family);
+    JSON_SAVE2(json, cell, type);
+    JSON_SAVE2(json, cell, resources);
+    JSON_SAVE2(json, cell, pipes);
+    JSON_SAVE2(json, cell, recipes);
+    if (cell.spore_bacteria) {
+      const bacteria_t& spore_bacteria = *cell.spore_bacteria;
+      JSON_SAVE(json, spore_bacteria);
+    }
+  }
+
+  inline void from_json(const nlohmann::json& json, cell_t& cell) {
+    TRACE_GENESIS;
+    JSON_LOAD2(json, cell, pos);
+    JSON_LOAD2(json, cell, age);
+    JSON_LOAD2(json, cell, health);
+    JSON_LOAD2(json, cell, family);
+    JSON_LOAD2(json, cell, type);
+    JSON_LOAD2(json, cell, resources);
+    JSON_LOAD2(json, cell, pipes);
+    JSON_LOAD2(json, cell, recipes);
+    if (json.find("spore_bacteria") != json.end()) {
+      bacteria_t spore_bacteria;
+      JSON_LOAD(json, spore_bacteria);
+      cell.spore_bacteria = std::make_shared<bacteria_t>(std::move(spore_bacteria));
+    }
   }
 
   inline void to_json(nlohmann::json& json, const context_json_t& context_json) {
@@ -503,6 +517,18 @@ namespace genesis_n {
     for (auto& recipe_name : recipes) {
       if (!config.recipes.contains(recipe_name)) {
         LOG_GENESIS(ERROR, "invalid cell_t::recipes %s", recipe_name.c_str());
+        return false;
+      }
+    }
+
+    if ((type == utils_t::SPORE) != ((bool) spore_bacteria)) {
+      LOG_GENESIS(ERROR, "invalid cell_t::spore_bacteria");
+      return false;
+    }
+
+    if (spore_bacteria) {
+      if (spore_bacteria->pos != pos || !spore_bacteria->validation(config)) {
+        LOG_GENESIS(ERROR, "invalid cell_t::spore_bacteria");
         return false;
       }
     }
@@ -917,8 +943,10 @@ namespace genesis_n {
       try {
         if (cell.type == utils_t::PRODUCER) {
           update_cell_producer(cell);
+        } else if (cell.type == utils_t::SPORE) {
+          update_cell_spore(cell);
         } else {
-          LOG_GENESIS(ERROR, "unknown cell.type %s", cell.type);
+          LOG_GENESIS(ERROR, "unknown cell.type %s", cell.type.c_str());
         }
         update_cell_total(cell);
       } catch (const std::exception& e) {
@@ -965,8 +993,9 @@ namespace genesis_n {
       }
       auto& resource_next = cell_next.resources.at(pipe.resource);
 
+      uint64_t stack_size = ctx_json.config.resources.at(pipe.resource).stack_size;
       uint64_t count = std::min(pipe.velocity, resource.count);
-      count = std::min(count, ctx_json.config.resources.at(pipe.resource).stack_size - resource_next.count);
+      count = std::min(count, stack_size - resource_next.count);
 
       resource.count -= count;
       resource_next.count += count;
@@ -976,8 +1005,10 @@ namespace genesis_n {
     cell.age++;
   }
 
-  void world_t::update_cell_producer(cell_t& cell) {
+  bool world_t::update_cell_producer(cell_t& cell) {
     TRACE_GENESIS;
+
+    bool ret = false;
 
     for (const auto& recipe_name : cell.recipes) {
       const auto& recipes = ctx_json.config.recipes;
@@ -1050,9 +1081,39 @@ namespace genesis_n {
           LOG_GENESIS(DEBUG, "count %zd", count);
         }
 
+        count = std::min(count, resource_info.stack_size - cell_resource.count);
+        LOG_GENESIS(DEBUG, "count new %zd %zd", cell_resource.count, count);
         cell_resource.count += count;
-        cell_resource.count = std::min(cell_resource.count, resource_info.stack_size);
       }
+
+      ret = true;
+    }
+
+    return ret;
+  }
+
+  void world_t::update_cell_spore(cell_t& cell) {
+    TRACE_GENESIS;
+
+    if (ctx.bacterias.contains(cell.pos)) {
+      return;
+    }
+
+    if (!update_cell_producer(cell)) {
+      return;
+    }
+
+    if (!cell.spore_bacteria) {
+      LOG_GENESIS(ERROR, "spore_bacteria is nullptr");
+      return;
+    }
+
+    auto bacteria = std::make_shared<bacteria_t>();
+    *bacteria = *cell.spore_bacteria;
+    // TODO mutation
+
+    if (bacteria->validation(ctx_json.config)) {
+        ctx.bacterias[cell.pos] = bacteria;
     }
   }
 
