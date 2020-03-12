@@ -56,7 +56,6 @@ struct logger_indent_genesis_t   : debug_logger_n::indent_t<logger_indent_genesi
 
 
 namespace genesis_n {
-  struct world_t;
   struct config_t;
 
   struct utils_t {
@@ -214,6 +213,8 @@ namespace genesis_n {
     uint64_t      code_size          = 32;
     uint64_t      registers_size     = 32;
     uint64_t      health_max         = 100;
+    std::string   ip                 = "127.0.0.1";
+    uint64_t      port               = 8000;
     debug_t       debug              = { utils_t::ERROR };
     resources_t   resources          = {};
     areas_t       areas              = {};
@@ -239,9 +240,39 @@ namespace genesis_n {
   };
   */
 
+  struct client_manager_t {
+    using buffers_t = std::map<int/*fd*/, std::pair<std::deque<char>/*req*/, std::deque<char>/*resp*/>>;
+
+    context_t&            ctx;
+    static const size_t   events_count             = 16;
+    int                   fd_listen;
+    int                   fd_epoll;
+    epoll_event           events[events_count];
+    buffers_t             buffers;
+    char                  buffer_tmp[1024];
+    bool                  is_run                   = false;
+
+    inline static const std::string GET = "GET ";
+    inline static const std::string NL = "\r\n";
+    inline static const std::string NL2 = "\r\n\r\n";
+    inline static const std::string ct_html = "text/html; charset=UTF-8";
+    inline static const std::string ct_json = "application/json";
+
+    client_manager_t(context_t& ctx) : ctx(ctx) { }
+    void init();
+    void update();
+    void close_all();
+    int set_nonblock(int fd);
+    int set_epoll_ctl(int fd, int events, int op);
+    void process_write(int fd);
+    void process_read(int fd);
+    std::string get_response(const std::string content_type, const std::string& body);
+  };
+
   struct world_t {
-    context_t     ctx;
-    std::string   file_name;
+    context_t          ctx              = {};
+    std::string        file_name        = {};
+    client_manager_t   client_manager   = client_manager_t(ctx);
 
     void update();
     void update_cell_total(cell_t& cell);
@@ -352,6 +383,8 @@ namespace genesis_n {
     JSON_SAVE2(json, config, code_size);
     JSON_SAVE2(json, config, registers_size);
     JSON_SAVE2(json, config, health_max);
+    JSON_SAVE2(json, config, ip);
+    JSON_SAVE2(json, config, port);
     JSON_SAVE2(json, config, debug);
     JSON_SAVE2(json, config, resources);
     JSON_SAVE2(json, config, areas);
@@ -366,6 +399,8 @@ namespace genesis_n {
     JSON_LOAD2(json, config, code_size);
     JSON_LOAD2(json, config, registers_size);
     JSON_LOAD2(json, config, health_max);
+    JSON_LOAD2(json, config, ip);
+    JSON_LOAD2(json, config, port);
     JSON_LOAD2(json, config, debug);
     JSON_LOAD2(json, config, resources);
     JSON_LOAD2(json, config, areas);
@@ -742,6 +777,16 @@ namespace genesis_n {
       return false;
     }
 
+    if (ip.size() > 46) { // IPv6
+      LOG_GENESIS(ERROR, "invalid config_t::ip %s", ip.c_str());
+      return false;
+    }
+
+    if (!port || port > 0xFFFF) {
+      LOG_GENESIS(ERROR, "invalid config_t::port %zd", port);
+      return false;
+    }
+
     if (debug.size() > 100) {
       LOG_GENESIS(ERROR, "invalid config_t::debug %zd", debug.size());
       return false;
@@ -1013,6 +1058,16 @@ namespace genesis_n {
 
       update_bacteria(*bacteria);
     }
+
+    /*
+    std::erase_if(ctx.bacterias, [](const auto& kv) {
+        const auto& bacteria = kv.second;
+        return !bacteria.health
+          || (bacteria.resources.contains(utils_t::ENERGY)
+              && !bacteria.resources.at(utils_t::ENERGY).count); });
+    */
+
+    client_manager.update();
   }
 
   void world_t::update_cell_total(cell_t& cell) {
@@ -1090,36 +1145,35 @@ namespace genesis_n {
     TRACE_GENESIS;
 
     uint8_t cmd = bacteria.code[(bacteria.rip++) % bacteria.code.size()];
-    LOG_GENESIS(DEBUG, "cmd: %zd", cmd);
+    LOG_GENESIS(MIND, "cmd: %zd", cmd);
 
-    // TODO
     switch (cmd) {
       case 0: {
-        LOG_GENESIS(DEBUG, "NOP");
+        LOG_GENESIS(MIND, "NOP");
         break;
 
       } case 1: {
-        LOG_GENESIS(DEBUG, "RET");
+        LOG_GENESIS(MIND, "RET");
         bacteria.rip = 0;
         break;
 
       } case 2: {
         uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
-        LOG_GENESIS(DEBUG, "BR <%%%d>", arg1);
+        LOG_GENESIS(MIND, "BR <%%%d>", arg1);
         bacteria.rip += bacteria.registers[arg1];
         break;
 
       } case 3: {
         uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
         uint8_t arg2 = bacteria.code[(bacteria.rip++) % bacteria.code.size()];
-        LOG_GENESIS(DEBUG, "SET <%%%d> <%d>", arg1, arg2);
+        LOG_GENESIS(MIND, "SET <%%%d> <%d>", arg1, arg2);
         bacteria.registers[arg1] = arg2;
         break;
 
       } case 4: {
         uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
         uint8_t arg2 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
-        LOG_GENESIS(DEBUG, "MOV <%%%d> <%%%d>", arg1, arg2);
+        LOG_GENESIS(MIND, "MOV <%%%d> <%%%d>", arg1, arg2);
         bacteria.registers[arg1] = bacteria.registers[arg2];
         break;
 
@@ -1127,7 +1181,7 @@ namespace genesis_n {
         uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
         uint8_t arg2 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
         uint8_t arg3 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
-        LOG_GENESIS(DEBUG, "ADD <%%%d> <%%%d> <%%%d>", arg1, arg2, arg3);
+        LOG_GENESIS(MIND, "ADD <%%%d> <%%%d> <%%%d>", arg1, arg2, arg3);
         bacteria.registers[arg1] = bacteria.registers[arg2] + bacteria.registers[arg3];
         break;
 
@@ -1135,7 +1189,7 @@ namespace genesis_n {
         uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
         uint8_t arg2 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
         uint8_t arg3 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
-        LOG_GENESIS(DEBUG, "SUB <%%%d> <%%%d> <%%%d>", arg1, arg2, arg3);
+        LOG_GENESIS(MIND, "SUB <%%%d> <%%%d> <%%%d>", arg1, arg2, arg3);
         bacteria.registers[arg1] = bacteria.registers[arg2] - bacteria.registers[arg3];
         break;
 
@@ -1145,42 +1199,42 @@ namespace genesis_n {
 
       } case 32: {
         uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
-        LOG_GENESIS(DEBUG, "MOVE <%%%d>", arg1);
+        LOG_GENESIS(MIND, "MOVE <%%%d>", arg1);
         // TODO
         break;
 
       } case 33: {
         uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
-        LOG_GENESIS(DEBUG, "GET RESOURCE <%%%d>", arg1);
+        LOG_GENESIS(MIND, "GET RESOURCE <%%%d>", arg1);
         // TODO
         break;
 
       } case 34: {
         uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
-        LOG_GENESIS(DEBUG, "DELETE CELL <%%%d>", arg1);
+        LOG_GENESIS(MIND, "DELETE CELL <%%%d>", arg1);
         // TODO
         break;
 
       } case 35: {
         uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
-        LOG_GENESIS(DEBUG, "NEW CELL PRODUCER <%%%d>", arg1);
+        LOG_GENESIS(MIND, "NEW CELL PRODUCER <%%%d>", arg1);
         // TODO
         break;
 
       } case 36: {
         uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
-        LOG_GENESIS(DEBUG, "NEW CELL SPORE <%%%d>", arg1);
+        LOG_GENESIS(MIND, "NEW CELL SPORE <%%%d>", arg1);
         // TODO
         break;
 
       } case 37: {
         uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
-        LOG_GENESIS(DEBUG, "MUTATION <%%%d>", arg1);
+        LOG_GENESIS(MIND, "MUTATION <%%%d>", arg1);
         // TODO
         break;
 
       } default: {
-        LOG_GENESIS(DEBUG, "NOTHING");
+        LOG_GENESIS(MIND, "NOTHING");
         break;
       }
     }
@@ -1272,6 +1326,8 @@ namespace genesis_n {
     load();
     utils_t::debug = ctx.config.debug;
     save();
+
+    client_manager.init();
   }
 
   void world_t::load() {
@@ -1296,6 +1352,238 @@ namespace genesis_n {
     nlohmann::json json;
     json = ctx;
     utils_t::save(json, file_name);
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  void client_manager_t::init() {
+    TRACE_GENESIS;
+
+    if (is_run) {
+      return;
+    }
+
+    if (fd_epoll = epoll_create1(0); fd_epoll < 0) {
+      LOG_GENESIS(ERROR, "fd_epoll: %d", fd_epoll);
+      close_all();
+      return;
+    }
+
+    if (fd_listen = socket(AF_INET, SOCK_STREAM, 0); fd_listen < 0) {
+      LOG_GENESIS(ERROR, "fd_listen: %d", fd_listen);
+      close_all();
+      return;
+    }
+
+    int on = 1;
+    if (int ret = setsockopt(fd_listen, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)); ret < 0) {
+      LOG_GENESIS(ERROR, "setsockopt(...): %d", ret);
+      close_all();
+      return;
+    }
+
+    in_addr ip_addr = {0};
+    if (int ret = inet_pton(AF_INET, ctx.config.ip.c_str(), &ip_addr); ret < 0) {
+      LOG_GENESIS(ERROR, "inet_pton(...): %d", ret);
+      close_all();
+      return;
+    }
+
+    sockaddr_in addr;
+    memset((char *) &addr, 0, sizeof(addr));
+    addr.sin_family      = AF_INET;
+    addr.sin_addr.s_addr = ip_addr.s_addr;
+    addr.sin_port        = htons((uint16_t) ctx.config.port);
+
+    if (int ret = bind(fd_listen, (sockaddr *) &addr, sizeof(addr)); ret < 0) {
+      LOG_GENESIS(ERROR, "bind(...): %d", ret);
+      close_all();
+      return;
+    }
+
+    if (set_nonblock(fd_listen) < 0) {
+      close_all();
+      return;
+    }
+
+    if (int ret = listen(fd_listen, SOMAXCONN); ret < 0) {
+      LOG_GENESIS(ERROR, "listen(...): %d", ret);
+      close_all();
+      return;
+    }
+
+    if (set_epoll_ctl(fd_listen, EPOLLIN, EPOLL_CTL_ADD) < 0) {
+      close_all();
+      return;
+    }
+
+    is_run = true;
+  }
+
+  void client_manager_t::update() {
+    TRACE_GENESIS;
+
+    if (!is_run) {
+      // init();
+      return;
+    }
+
+    int event_count = epoll_wait(fd_epoll, events, events_count, 0);
+
+    for (int i = 0; i < event_count; i++) {
+      epoll_event& event = events[i];
+      LOG_GENESIS(EPOLL, "events: 0x%x", event.events);
+      LOG_GENESIS(EPOLL, "data.fd: %d", event.data.fd);
+
+      if ((event.events & EPOLLERR) ||
+          (event.events & EPOLLHUP) ||
+          (!(event.events & (EPOLLIN | EPOLLOUT))))
+      {
+        LOG_GENESIS(EPOLL, "epoll error");
+        close(event.data.fd);
+        continue;
+      }
+
+      if (event.data.fd == fd_listen) {
+        LOG_GENESIS(EPOLL, "new connection");
+
+        int fd = accept(fd_listen , 0, 0);
+        LOG_GENESIS(EPOLL, "fd: %d", fd);
+        if (fd < 0) {
+          LOG_GENESIS(ERROR, "fd: %d", fd);
+          close_all();
+        }
+
+        if (set_nonblock(fd) < 0) {
+          close_all();
+        }
+
+        if (set_epoll_ctl(fd, EPOLLIN, EPOLL_CTL_ADD) < 0) {
+          close_all();
+        }
+
+        continue;
+      }
+
+      if (event.events & EPOLLIN) {
+        process_read(event.data.fd);
+      } else {
+        process_write(event.data.fd);
+      }
+    }
+  }
+
+  void client_manager_t::close_all() {
+    TRACE_GENESIS;
+
+    close(fd_listen);
+    close(fd_epoll);
+    for (auto& kv : buffers) {
+      close(kv.first);
+    }
+    buffers.clear();
+    is_run = false;
+  }
+
+  int client_manager_t::set_nonblock(int fd) {
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0) {
+      flags = 0;
+    }
+
+    int ret = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    if (ret < 0) {
+      LOG_GENESIS(ERROR, "fcntl(...): %d", ret);
+    }
+    return ret;
+  }
+
+  int client_manager_t::set_epoll_ctl(int fd, int events, int op) {
+    epoll_event event;
+    event.data.fd = fd;
+    event.events = events;
+    int ret = epoll_ctl(fd_epoll, op, fd, &event);
+    if (ret < 0) {
+      LOG_GENESIS(ERROR, "epoll_ctl(...): %d", ret);
+    }
+    return ret;
+  }
+
+  void client_manager_t::process_write(int fd) {
+    TRACE_GENESIS;
+    auto& buffer = buffers[fd];
+    auto& buffer_resp = buffer.second;
+
+    int bytes_write = std::min((int) sizeof(buffer_tmp),
+        (int) std::distance(buffer_resp.begin(), buffer_resp.end()));
+
+    std::copy(buffer_resp.begin(), buffer_resp.begin() + bytes_write, std::begin(buffer_tmp));
+
+    bytes_write = write(fd, buffer_tmp, bytes_write);
+    buffer_resp.erase(buffer_resp.begin(), buffer_resp.begin() + bytes_write);
+    LOG_GENESIS(EPOLL, "write: %d", bytes_write);
+
+    if (buffer_resp.empty()) {
+      if (set_epoll_ctl(fd, EPOLLIN, EPOLL_CTL_MOD) < 0) {
+        close_all();
+      }
+    }
+  }
+
+  void client_manager_t::process_read(int fd) {
+    TRACE_GENESIS;
+    int bytes_read = read(fd, buffer_tmp, sizeof(buffer_tmp));
+    LOG_GENESIS(EPOLL, "read: fd: %d, bytes_read: %d", fd, bytes_read);
+    if (bytes_read == -1) {
+      if (errno != EAGAIN) {
+        LOG_GENESIS(EPOLL, "errno: !EAGAIN");
+        close(fd);
+      }
+    } else if (bytes_read == 0) {
+      LOG_GENESIS(EPOLL, "bytes_read == 0");
+      shutdown(fd, SHUT_RDWR);
+      close(fd);
+      buffers.erase(fd);
+    } else {
+      auto& buffer = buffers[fd];
+      auto& buffer_req = buffer.first;
+      auto& buffer_resp = buffer.second;
+
+      buffer_req.insert(buffer_req.end(), std::begin(buffer_tmp),
+          std::begin(buffer_tmp) + bytes_read);
+
+      // auto tmp = http_parser_t::method();
+      // auto tmp = http_parser_t::params();
+
+      auto it = std::search(buffer_req.begin(), buffer_req.end(), NL2.begin(), NL2.end());
+      if (it != buffer_req.end()) {
+        // GET found
+        it += NL2.size();
+        LOG_GENESIS(EPOLL, "msg: '%s'", std::string(buffer_req.begin(), it).c_str());
+        buffer_req.erase(buffer_req.begin(), it);
+
+        std::string response = "<h1>amyasnikov: genesis</h1>";
+
+        response = get_response(ct_html, response);
+
+        buffer_resp.insert(buffer_resp.end(), response.begin(), response.end());
+
+        if (set_epoll_ctl(fd, EPOLLIN | EPOLLOUT, EPOLL_CTL_MOD) < 0) {
+          close_all();
+        }
+      }
+    }
+  }
+
+  std::string client_manager_t::get_response(const std::string content_type, const std::string& body) {
+    std::stringstream ss;
+    ss << "HTTP/1.1 200 OK" << NL
+      << "Content-Type: " << content_type << NL
+      << "Content-Length: " << body.size() << NL
+      << "Connection: keep-alive" << NL << NL
+      << body;
+
+    return ss.str();
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -1325,7 +1613,7 @@ int main(int argc, char* argv[]) {
   world.file_name = file_name;
   world.init();
 
-  for (size_t i{}; i < 100; ++i) {
+  while (true) {
     world.update();
     world.save();
     std::this_thread::sleep_for(std::chrono::milliseconds(100));

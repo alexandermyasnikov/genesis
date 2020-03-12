@@ -39,7 +39,7 @@
         58,
         52
       ],
-      "rip": 106
+      "rip": 7862
     },
     {
       "code": [
@@ -80,12 +80,12 @@
         81,
         170
       ],
-      "rip": 115
+      "rip": 8381
     }
   ],
   "cells": [
     {
-      "age": 20134,
+      "age": 69298,
       "family": "dev_test",
       "health": 100,
       "pipes": [
@@ -109,7 +109,7 @@
       "type": "producer"
     },
     {
-      "age": 16064,
+      "age": 65228,
       "family": "dev_test",
       "health": 100,
       "pipes": [
@@ -132,7 +132,7 @@
       "type": "producer"
     },
     {
-      "age": 11244,
+      "age": 60408,
       "family": "dev_test",
       "health": 100,
       "pipes": [
@@ -155,7 +155,7 @@
       "type": "producer"
     },
     {
-      "age": 11244,
+      "age": 60408,
       "family": "dev_test",
       "health": 100,
       "pipes": [],
@@ -230,12 +230,15 @@
     },
     "code_size": 16,
     "debug": [
-      "args ",
-      "debug",
-      "error",
-      "trace"
+      "_args ",
+      "_debug",
+      "_trace",
+      "epoll",
+      "error"
     ],
     "health_max": 100,
+    "ip": "127.0.0.1",
+    "port": 8000,
     "position_max": 400,
     "position_n": 20,
     "recipes": {
