@@ -223,6 +223,10 @@ namespace genesis_n {
     bool validation();
   };
 
+  struct stats_t {
+    uint64_t      age        = {};
+  };
+
   struct context_t {
     using cells_t       = std::map<size_t/*pos*/, cell_t>;
     using bacterias_t   = std::map<size_t/*pos*/, bacteria_sptr_t>;
@@ -230,6 +234,7 @@ namespace genesis_n {
     config_t      config        = {};
     cells_t       cells         = {};
     bacterias_t   bacterias     = {};
+    stats_t       stats         = {};
 
     bool validation();
   };
@@ -458,6 +463,16 @@ namespace genesis_n {
     }
   }
 
+  inline void to_json(nlohmann::json& json, const stats_t& stats) {
+    TRACE_GENESIS;
+    JSON_SAVE2(json, stats, age);
+  }
+
+  inline void from_json(const nlohmann::json& json, stats_t& stats) {
+    TRACE_GENESIS;
+    JSON_LOAD2(json, stats, age);
+  }
+
   inline void to_json(nlohmann::json& json, const context_t& context) {
     TRACE_GENESIS;
     JSON_SAVE2(json, context, config);
@@ -479,6 +494,7 @@ namespace genesis_n {
       }
       JSON_SAVE(json, bacterias);
     }
+    JSON_SAVE2(json, context, stats);
   }
 
   inline void from_json(const nlohmann::json& json, context_t& context) {
@@ -498,6 +514,7 @@ namespace genesis_n {
         context.bacterias[bacteria.pos] = std::make_shared<bacteria_t>(std::move(bacteria));
       }
     }
+    JSON_LOAD2(json, context, stats);
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -1066,6 +1083,11 @@ namespace genesis_n {
           || (bacteria.resources.contains(utils_t::ENERGY)
               && !bacteria.resources.at(utils_t::ENERGY).count); });
     */
+
+    // stats
+    {
+      ctx.stats.age++;
+    }
 
     client_manager.update();
   }

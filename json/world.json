@@ -39,7 +39,7 @@
         58,
         52
       ],
-      "rip": 7862
+      "rip": 520
     },
     {
       "code": [
@@ -80,12 +80,12 @@
         81,
         170
       ],
-      "rip": 8381
+      "rip": 551
     }
   ],
   "cells": [
     {
-      "age": 69298,
+      "age": 78308,
       "family": "dev_test",
       "health": 100,
       "pipes": [
@@ -109,7 +109,7 @@
       "type": "producer"
     },
     {
-      "age": 65228,
+      "age": 74238,
       "family": "dev_test",
       "health": 100,
       "pipes": [
@@ -132,7 +132,7 @@
       "type": "producer"
     },
     {
-      "age": 60408,
+      "age": 69418,
       "family": "dev_test",
       "health": 100,
       "pipes": [
@@ -155,7 +155,7 @@
       "type": "producer"
     },
     {
-      "age": 60408,
+      "age": 69418,
       "family": "dev_test",
       "health": 100,
       "pipes": [],
@@ -316,5 +316,8 @@
       }
     },
     "revision": 0
+  },
+  "stats": {
+    "age": 506
   }
 }
