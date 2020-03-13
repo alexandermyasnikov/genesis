@@ -58,6 +58,7 @@ struct logger_indent_genesis_t   : debug_logger_n::indent_t<logger_indent_genesi
 
 namespace genesis_n {
   struct config_t;
+  struct world_t;
 
   struct utils_t {
     inline static std::string TMP_PREFIX       = ".tmp";
@@ -208,18 +209,23 @@ namespace genesis_n {
     using areas_t       = std::map<std::string/*resource*/, std::vector<area_t>>;
     using recipes_t     = std::map<std::string/*name*/,     recipe_t>;
 
-    uint64_t      revision           = 0;
-    uint64_t      position_n         = 20;
-    uint64_t      position_max       = 400;
-    uint64_t      code_size          = 32;
-    uint64_t      registers_size     = 32;
-    uint64_t      health_max         = 100;
-    std::string   ip                 = "127.0.0.1";
-    uint64_t      port               = 8000;
-    debug_t       debug              = { utils_t::ERROR };
-    resources_t   resources          = {};
-    areas_t       areas              = {};
-    recipes_t     recipes            = {};
+    uint64_t      revision                    = 0;
+    uint64_t      position_n                  = 20;
+    uint64_t      position_max                = 400;
+    uint64_t      code_size                   = 32;
+    uint64_t      registers_size              = 32;
+    uint64_t      health_max                  = 100;
+    std::string   ip                          = "127.0.0.1";
+    uint64_t      port                        = 8000;
+    uint64_t      interval_update_world_ms    = 100;
+    uint64_t      interval_update_epoll_ms    = 10;
+    uint64_t      interval_cache_world_ms     = 10;
+    uint64_t      interval_save_world_ms      = 60 * 1000;
+    uint64_t      sleep_timeout               = 1;
+    debug_t       debug                       = { utils_t::ERROR };
+    resources_t   resources                   = {};
+    areas_t       areas                       = {};
+    recipes_t     recipes                     = {};
 
     bool validation();
   };
@@ -392,16 +398,16 @@ namespace genesis_n {
   struct client_manager_t {
     using buffers_t = std::map<int/*fd*/, std::pair<http_parser_t/*req*/, http_parser_t/*resp*/>>;
 
-    context_t&            ctx;
+    world_t&              world;
     static const size_t   events_count             = 16;
     int                   fd_listen                = -1;
     int                   fd_epoll                 = -1;
     epoll_event           events[events_count]     = {};
     buffers_t             buffers                  = {};
-    char                  buffer_tmp[10  ]         = {};
+    char                  buffer_tmp[32 * 1024]    = {};
     bool                  is_run                   = false;
 
-    client_manager_t(context_t& ctx) : ctx(ctx) { }
+    client_manager_t(world_t& world) : world(world) { }
     void init();
     void update();
     void close_all();
@@ -414,9 +420,18 @@ namespace genesis_n {
   struct world_t {
     context_t          ctx              = {};
     std::string        file_name        = {};
-    client_manager_t   client_manager   = client_manager_t(ctx);
+    client_manager_t   client_manager   = client_manager_t(*this);
+
+    nlohmann::json     ctx_json         = {}; // TODO
+    std::string        ctx_str          = {};
+    uint64_t           time_ms          = {};
+    uint64_t           update_world_ms  = {};
+    uint64_t           update_epoll_ms  = {};
+    uint64_t           cache_world_ms   = {};
+    uint64_t           save_world_ms    = {};
 
     void update();
+    void update_ctx();
     void update_cell_total(cell_t& cell);
     void update_cell_producer(cell_t& cell);
     void update_cell_spore(cell_t& cell);
@@ -527,6 +542,11 @@ namespace genesis_n {
     JSON_SAVE2(json, config, health_max);
     JSON_SAVE2(json, config, ip);
     JSON_SAVE2(json, config, port);
+    JSON_SAVE2(json, config, interval_update_world_ms);
+    JSON_SAVE2(json, config, interval_update_epoll_ms);
+    JSON_SAVE2(json, config, interval_cache_world_ms);
+    JSON_SAVE2(json, config, interval_save_world_ms);
+    JSON_SAVE2(json, config, sleep_timeout);
     JSON_SAVE2(json, config, debug);
     JSON_SAVE2(json, config, resources);
     JSON_SAVE2(json, config, areas);
@@ -543,6 +563,11 @@ namespace genesis_n {
     JSON_LOAD2(json, config, health_max);
     JSON_LOAD2(json, config, ip);
     JSON_LOAD2(json, config, port);
+    JSON_LOAD2(json, config, interval_update_world_ms);
+    JSON_LOAD2(json, config, interval_update_epoll_ms);
+    JSON_LOAD2(json, config, interval_cache_world_ms);
+    JSON_LOAD2(json, config, interval_save_world_ms);
+    JSON_LOAD2(json, config, sleep_timeout);
     JSON_LOAD2(json, config, debug);
     JSON_LOAD2(json, config, resources);
     JSON_LOAD2(json, config, areas);
@@ -1183,6 +1208,49 @@ namespace genesis_n {
   void world_t::update() {
     TRACE_GENESIS;
 
+    bool need_sleep = true;
+
+    time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+
+    if (update_world_ms < time_ms) {
+      LOG_GENESIS(TIME, "update_world_ms %zd   %zd", time_ms, time_ms - update_world_ms);
+      update_world_ms = time_ms + ctx.config.interval_update_world_ms;
+      update_ctx();
+      need_sleep = false;
+    }
+
+    if (update_epoll_ms < time_ms) {
+      LOG_GENESIS(TIME, "update_epoll_ms %zd   %zd", time_ms, time_ms - update_epoll_ms);
+      update_epoll_ms = time_ms + ctx.config.interval_update_epoll_ms;
+      client_manager.update();
+      need_sleep = false;
+    }
+
+    if (cache_world_ms < time_ms) {
+      LOG_GENESIS(TIME, "cache_world_ms %zd   %zd", time_ms, time_ms - cache_world_ms);
+      cache_world_ms = time_ms + ctx.config.interval_save_world_ms;
+      ctx_json = ctx;
+      ctx_str = ctx_json.dump();
+      need_sleep = false;
+    }
+
+    if (save_world_ms < time_ms) {
+      LOG_GENESIS(TIME, "save_world_ms %zd   %zd", time_ms, time_ms - save_world_ms);
+      save_world_ms = time_ms + ctx.config.interval_save_world_ms;
+      utils_t::save(ctx_json, file_name);
+      need_sleep = false;
+    }
+
+    if (need_sleep && ctx.config.sleep_timeout) {
+      LOG_GENESIS(TIME, "sleep %zd", time_ms);
+      std::this_thread::sleep_for(std::chrono::milliseconds(ctx.config.sleep_timeout));
+    }
+  }
+
+  void world_t::update_ctx() {
+    TRACE_GENESIS;
+
     for (auto& [_, cell] : ctx.cells) {
       LOG_GENESIS(DEBUG, "cell.pos %zd", cell.pos);
       try {
@@ -1225,8 +1293,6 @@ namespace genesis_n {
     {
       ctx.stats.age++;
     }
-
-    client_manager.update();
   }
 
   void world_t::update_cell_total(cell_t& cell) {
@@ -1542,7 +1608,7 @@ namespace genesis_n {
     }
 
     in_addr ip_addr = {0};
-    if (int ret = inet_pton(AF_INET, ctx.config.ip.c_str(), &ip_addr); ret < 0) {
+    if (int ret = inet_pton(AF_INET, world.ctx.config.ip.c_str(), &ip_addr); ret < 0) {
       LOG_GENESIS(ERROR, "inet_pton(...): %d", ret);
       close_all();
       return;
@@ -1552,7 +1618,7 @@ namespace genesis_n {
     memset((char *) &addr, 0, sizeof(addr));
     addr.sin_family      = AF_INET;
     addr.sin_addr.s_addr = ip_addr.s_addr;
-    addr.sin_port        = htons((uint16_t) ctx.config.port);
+    addr.sin_port        = htons((uint16_t) world.ctx.config.port);
 
     if (int ret = bind(fd_listen, (sockaddr *) &addr, sizeof(addr)); ret < 0) {
       LOG_GENESIS(ERROR, "bind(...): %d", ret);
@@ -1725,7 +1791,7 @@ namespace genesis_n {
       if (http_parser.is_end) {
         auto& http_parser = buffers[fd].second;
 
-        http_parser.body = "[\"ok\", 12345, 12345, 12345, 12345, 12345, 12345, 12345, 12345, 12345, 12345, 12345]";
+        http_parser.body = world.ctx_str;
         http_parser.headers[http_parser_t::CONTENT_LENGTH] = std::to_string(http_parser.body.size());
         http_parser.headers[http_parser_t::CONTENT_TYPE]   = http_parser_t::APPLICATION_JSON;
         http_parser.headers[http_parser_t::CONNECTION]     = http_parser_t::KEEP_ALIVE;
@@ -1768,8 +1834,6 @@ int main(int argc, char* argv[]) {
 
   while (true) {
     world.update();
-    world.save();
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
   std::cout << "end" << std::endl;
