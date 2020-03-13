@@ -10,6 +10,7 @@
 #include <chrono>
 #include <thread>
 #include <deque>
+#include <regex>
 #include <list>
 #include <set>
 
@@ -239,22 +240,131 @@ namespace genesis_n {
     bool validation();
   };
 
-  /*
   struct http_parser_t {
-    ;
+    using params_t    = std::map<std::string, std::string>;
+    using headers_t   = std::map<std::string, std::string>;
+    using buffer_t    = std::deque<char>;
+
+    buffer_t      buffer           = {};
+
+    std::string   url              = {};
+    params_t      params           = {};
+    headers_t     headers          = {};
+    std::string   body             = {};
+
+    uint64_t      state            = {};
+    uint64_t      content_length   = {};
+    bool          is_end           = false;
+
+    inline static const std::string NL = "\r\n";
+
+    void read() {
+      TRACE_GENESIS;
+      LOG_GENESIS(EPOLL, "read: buffer.size: %zd", buffer.size());
+
+      switch (state) {
+        case 0: {
+          url            = {};
+          params         = {};
+          headers        = {};
+          body           = {};
+          content_length = {};
+          is_end         = false;
+
+          state = 1;
+          [[fallthrough]];
+
+        } case 1: {
+          auto it = std::search(buffer.begin(), buffer.end(), NL.begin(), NL.end());
+          if (it == buffer.end()) {
+            return;
+          }
+          url = std::string(buffer.begin(), it);
+          it += NL.size();
+          buffer.erase(buffer.begin(), it);
+          LOG_GENESIS(EPOLL, "url: %zd %s", url.size(), url.c_str());
+
+          state = 2;
+          [[fallthrough]];
+
+        } case 2: {
+          while (true) {
+            auto it = std::search(buffer.begin(), buffer.end(), NL.begin(), NL.end());
+            if (it == buffer.end()) {
+              return;
+            }
+            std::string header = std::string(buffer.begin(), it);
+            it += NL.size();
+            buffer.erase(buffer.begin(), it);
+
+            if (header.empty()) {
+              break;
+            }
+
+            LOG_GENESIS(EPOLL, "header: %zd '%s'", header.size(), header.c_str());
+            const std::regex   base_regex("^(\\S+): (.+)$");
+            std::smatch        base_match;
+            if (std::regex_match(header, base_match, base_regex)) {
+              if (base_match.size() == 3) {
+                headers[base_match[1]] = base_match[2];
+              }
+            }
+          }
+
+          for (const auto& [key, val] : headers) {
+            LOG_GENESIS(EPOLL, "header: %s: %s", key.c_str(), val.c_str());
+            if (key == "Content-Length") {
+              content_length = std::stol(val);
+            }
+          }
+
+          state = 3;
+          [[fallthrough]];
+
+        } case 3: {
+          LOG_GENESIS(EPOLL, "body size: %zd / %zd", buffer.size(), content_length);
+
+          if (buffer.size() >= content_length) {
+            auto it = buffer.begin() + content_length;
+            body = std::string(buffer.begin(), it);
+            buffer.erase(buffer.begin(), it);
+            LOG_GENESIS(EPOLL, "body %s", body.c_str());
+
+            is_end = 1;
+            state = {};
+            break;
+          }
+
+        }
+      }
+    }
+
+    void write() {
+      TRACE_GENESIS;
+
+      std::stringstream ss;
+      ss << "HTTP/1.1 200 OK" << NL;
+      for (const auto& [key, val] : headers) {
+        ss << key << ": " << val << NL;
+      }
+      ss << NL << body;
+
+      std::string resp = ss.str();
+      buffer.insert(buffer.end(), resp.begin(), resp.end());
+      LOG_GENESIS(EPOLL, "response:\n%s", resp.c_str());
+    }
   };
-  */
 
   struct client_manager_t {
-    using buffers_t = std::map<int/*fd*/, std::pair<std::deque<char>/*req*/, std::deque<char>/*resp*/>>;
+    using buffers_t = std::map<int/*fd*/, std::pair<http_parser_t/*req*/, http_parser_t/*resp*/>>;
 
     context_t&            ctx;
     static const size_t   events_count             = 16;
-    int                   fd_listen;
-    int                   fd_epoll;
-    epoll_event           events[events_count];
-    buffers_t             buffers;
-    char                  buffer_tmp[1024];
+    int                   fd_listen                = -1;
+    int                   fd_epoll                 = -1;
+    epoll_event           events[events_count]     = {};
+    buffers_t             buffers                  = {};
+    char                  buffer_tmp[10  ]         = {};
     bool                  is_run                   = false;
 
     inline static const std::string GET = "GET ";
@@ -271,7 +381,6 @@ namespace genesis_n {
     int set_epoll_ctl(int fd, int events, int op);
     void process_write(int fd);
     void process_read(int fd);
-    std::string get_response(const std::string content_type, const std::string& body);
   };
 
   struct world_t {
@@ -1456,6 +1565,7 @@ namespace genesis_n {
       epoll_event& event = events[i];
       LOG_GENESIS(EPOLL, "events: 0x%x", event.events);
       LOG_GENESIS(EPOLL, "data.fd: %d", event.data.fd);
+      LOG_GENESIS(EPOLL, "buffers.size(): %zd", buffers.size());
 
       if ((event.events & EPOLLERR) ||
           (event.events & EPOLLHUP) ||
@@ -1500,8 +1610,8 @@ namespace genesis_n {
 
     close(fd_listen);
     close(fd_epoll);
-    for (auto& kv : buffers) {
-      close(kv.first);
+    for (auto& [fd, _] : buffers) {
+      close(fd);
     }
     buffers.clear();
     is_run = false;
@@ -1533,21 +1643,27 @@ namespace genesis_n {
 
   void client_manager_t::process_write(int fd) {
     TRACE_GENESIS;
-    auto& buffer = buffers[fd];
-    auto& buffer_resp = buffer.second;
+    auto& http_parser = buffers[fd].second;
+    auto& buffer      = http_parser.buffer;
 
-    int bytes_write = std::min((int) sizeof(buffer_tmp),
-        (int) std::distance(buffer_resp.begin(), buffer_resp.end()));
+    int bytes_write = std::min(sizeof(buffer_tmp), buffer.size());
 
-    std::copy(buffer_resp.begin(), buffer_resp.begin() + bytes_write, std::begin(buffer_tmp));
+    std::copy(buffer.begin(), buffer.begin() + bytes_write, std::begin(buffer_tmp));
 
     bytes_write = write(fd, buffer_tmp, bytes_write);
-    buffer_resp.erase(buffer_resp.begin(), buffer_resp.begin() + bytes_write);
+
+    if (bytes_write <= 0) {
+      LOG_GENESIS(ERROR, "write(...): %d", bytes_write);
+      close(fd);
+      return;
+    }
+
+    buffer.erase(buffer.begin(), buffer.begin() + bytes_write);
     LOG_GENESIS(EPOLL, "write: %d", bytes_write);
 
-    if (buffer_resp.empty()) {
+    if (http_parser.buffer.empty()) {
       if (set_epoll_ctl(fd, EPOLLIN, EPOLL_CTL_MOD) < 0) {
-        close_all();
+        close(fd);
       }
     }
   }
@@ -1556,56 +1672,43 @@ namespace genesis_n {
     TRACE_GENESIS;
     int bytes_read = read(fd, buffer_tmp, sizeof(buffer_tmp));
     LOG_GENESIS(EPOLL, "read: fd: %d, bytes_read: %d", fd, bytes_read);
+
     if (bytes_read == -1) {
       if (errno != EAGAIN) {
         LOG_GENESIS(EPOLL, "errno: !EAGAIN");
         close(fd);
       }
+
     } else if (bytes_read == 0) {
       LOG_GENESIS(EPOLL, "bytes_read == 0");
       shutdown(fd, SHUT_RDWR);
       close(fd);
       buffers.erase(fd);
-    } else {
-      auto& buffer = buffers[fd];
-      auto& buffer_req = buffer.first;
-      auto& buffer_resp = buffer.second;
 
-      buffer_req.insert(buffer_req.end(), std::begin(buffer_tmp),
+    } else {
+      auto& http_parser = buffers[fd].first;
+      auto& buffer      = http_parser.buffer;
+
+      buffer.insert(buffer.end(), std::begin(buffer_tmp),
           std::begin(buffer_tmp) + bytes_read);
 
-      // auto tmp = http_parser_t::method();
-      // auto tmp = http_parser_t::params();
+      http_parser.read();
 
-      auto it = std::search(buffer_req.begin(), buffer_req.end(), NL2.begin(), NL2.end());
-      if (it != buffer_req.end()) {
-        // GET found
-        it += NL2.size();
-        LOG_GENESIS(EPOLL, "msg: '%s'", std::string(buffer_req.begin(), it).c_str());
-        buffer_req.erase(buffer_req.begin(), it);
+      if (http_parser.is_end) {
+        auto& http_parser = buffers[fd].second;
 
-        std::string response = "<h1>amyasnikov: genesis</h1>";
+        http_parser.body = "[\"ok\", 12345, 12345, 12345, 12345, 12345, 12345, 12345, 12345, 12345, 12345, 12345]";
+        http_parser.headers["Content-Type"]   = "application/json";
+        http_parser.headers["Content-Length"] = std::to_string(http_parser.body.size());
+        http_parser.headers["Connection"]     = "keep-alive";
 
-        response = get_response(ct_html, response);
-
-        buffer_resp.insert(buffer_resp.end(), response.begin(), response.end());
+        http_parser.write();
 
         if (set_epoll_ctl(fd, EPOLLIN | EPOLLOUT, EPOLL_CTL_MOD) < 0) {
-          close_all();
+          close(fd);
         }
       }
     }
-  }
-
-  std::string client_manager_t::get_response(const std::string content_type, const std::string& body) {
-    std::stringstream ss;
-    ss << "HTTP/1.1 200 OK" << NL
-      << "Content-Type: " << content_type << NL
-      << "Content-Length: " << body.size() << NL
-      << "Connection: keep-alive" << NL << NL
-      << body;
-
-    return ss.str();
   }
 
   ////////////////////////////////////////////////////////////////////////////////
