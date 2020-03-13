@@ -247,7 +247,7 @@ namespace genesis_n {
 
     buffer_t      buffer           = {};
 
-    std::string   url              = {};
+    std::string   path             = {};
     params_t      params           = {};
     headers_t     headers          = {};
     std::string   body             = {};
@@ -264,7 +264,7 @@ namespace genesis_n {
 
       switch (state) {
         case 0: {
-          url            = {};
+          path           = {};
           params         = {};
           headers        = {};
           body           = {};
@@ -279,10 +279,38 @@ namespace genesis_n {
           if (it == buffer.end()) {
             return;
           }
-          url = std::string(buffer.begin(), it);
+          std::string req_line = std::string(buffer.begin(), it);
           it += NL.size();
           buffer.erase(buffer.begin(), it);
-          LOG_GENESIS(EPOLL, "url: %zd %s", url.size(), url.c_str());
+          LOG_GENESIS(EPOLL, "req_line: %zd %s", req_line.size(), req_line.c_str());
+
+          const std::regex   base_regex("^(\\w+) (.+) HTTP/\\d.\\d$");
+          std::smatch        base_match;
+          if (std::regex_match(req_line, base_match, base_regex)) {
+            if (base_match.size() == 3) {
+              LOG_GENESIS(EPOLL, "method: %s", base_match[1].str().c_str());
+              std::string url = base_match[2];
+              size_t pos = url.find_first_of('?');
+              if (pos != std::string::npos) {
+                path = url.substr(0, pos);
+                std::string query = url.substr(pos + 1);
+                LOG_GENESIS(EPOLL, "query: %s", query.c_str());
+
+                const std::regex   base_regex("(\\w+)=(\\w+)(?:&|$)");
+                std::smatch        base_match;
+                while (std::regex_search(query, base_match, base_regex)) {
+                  if (base_match.size() == 3) {
+                    params[base_match[1]] = base_match[2];
+                    LOG_GENESIS(EPOLL, "param: %s: %s",
+                        base_match[1].str().c_str(),
+                        base_match[2].str().c_str());
+                  }
+                  query = base_match.suffix();
+                }
+              }
+              LOG_GENESIS(EPOLL, "path: %s",   path.c_str());
+            }
+          }
 
           state = 2;
           [[fallthrough]];
