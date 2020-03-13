@@ -256,7 +256,13 @@ namespace genesis_n {
     uint64_t      content_length   = {};
     bool          is_end           = false;
 
-    inline static const std::string NL = "\r\n";
+    inline static const std::string NL               = "\r\n";
+    inline static const std::string CODE_200         = "200 OK";
+    inline static const std::string CONTENT_LENGTH   = "Content-Length";
+    inline static const std::string CONTENT_TYPE     = "Content-Type";
+    inline static const std::string CONNECTION       = "Connection";
+    inline static const std::string KEEP_ALIVE       = "keep-alive";
+    inline static const std::string APPLICATION_JSON = "application/json";
 
     void read() {
       TRACE_GENESIS;
@@ -341,7 +347,7 @@ namespace genesis_n {
 
           for (const auto& [key, val] : headers) {
             LOG_GENESIS(EPOLL, "header: %s: %s", key.c_str(), val.c_str());
-            if (key == "Content-Length") {
+            if (key == CONTENT_LENGTH) {
               content_length = std::stol(val);
             }
           }
@@ -371,7 +377,7 @@ namespace genesis_n {
       TRACE_GENESIS;
 
       std::stringstream ss;
-      ss << "HTTP/1.1 200 OK" << NL;
+      ss << "HTTP/1.1 " << CODE_200 << NL;
       for (const auto& [key, val] : headers) {
         ss << key << ": " << val << NL;
       }
@@ -394,12 +400,6 @@ namespace genesis_n {
     buffers_t             buffers                  = {};
     char                  buffer_tmp[10  ]         = {};
     bool                  is_run                   = false;
-
-    inline static const std::string GET = "GET ";
-    inline static const std::string NL = "\r\n";
-    inline static const std::string NL2 = "\r\n\r\n";
-    inline static const std::string ct_html = "text/html; charset=UTF-8";
-    inline static const std::string ct_json = "application/json";
 
     client_manager_t(context_t& ctx) : ctx(ctx) { }
     void init();
@@ -1726,9 +1726,9 @@ namespace genesis_n {
         auto& http_parser = buffers[fd].second;
 
         http_parser.body = "[\"ok\", 12345, 12345, 12345, 12345, 12345, 12345, 12345, 12345, 12345, 12345, 12345]";
-        http_parser.headers["Content-Type"]   = "application/json";
-        http_parser.headers["Content-Length"] = std::to_string(http_parser.body.size());
-        http_parser.headers["Connection"]     = "keep-alive";
+        http_parser.headers[http_parser_t::CONTENT_LENGTH] = std::to_string(http_parser.body.size());
+        http_parser.headers[http_parser_t::CONTENT_TYPE]   = http_parser_t::APPLICATION_JSON;
+        http_parser.headers[http_parser_t::CONNECTION]     = http_parser_t::KEEP_ALIVE;
 
         http_parser.write();
 
