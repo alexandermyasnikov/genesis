@@ -1,6 +1,6 @@
 {
-  "bacterias": [
-    {
+  "bacterias": {
+    "11": {
       "code": [
         144,
         239,
@@ -39,9 +39,9 @@
         58,
         52
       ],
-      "rip": 1184
+      "rip": 1191
     },
-    {
+    "51": {
       "code": [
         217,
         131,
@@ -80,12 +80,12 @@
         81,
         170
       ],
-      "rip": 1268
+      "rip": 1271
     }
-  ],
-  "cells": [
-    {
-      "age": 322220,
+  },
+  "cells": {
+    "10": {
+      "age": 452003,
       "family": "dev_test",
       "health": 100,
       "pipes": [
@@ -108,8 +108,8 @@
       },
       "type": "producer"
     },
-    {
-      "age": 318150,
+    "11": {
+      "age": 447933,
       "family": "dev_test",
       "health": 100,
       "pipes": [
@@ -131,8 +131,8 @@
       },
       "type": "producer"
     },
-    {
-      "age": 313330,
+    "31": {
+      "age": 443113,
       "family": "dev_test",
       "health": 100,
       "pipes": [
@@ -154,8 +154,8 @@
       },
       "type": "producer"
     },
-    {
-      "age": 313330,
+    "51": {
+      "age": 443113,
       "family": "dev_test",
       "health": 100,
       "pipes": [],
@@ -213,7 +213,7 @@
       },
       "type": "spore"
     }
-  ],
+  },
   "config": {
     "areas": {
       "energy": [
@@ -242,7 +242,7 @@
     "interval_save_world_ms": 60000,
     "interval_update_epoll_ms": 1,
     "interval_update_world_ms": 100,
-    "ip": "127.0.0.1",
+    "ip": "192.168.0.103",
     "port": 8000,
     "position_max": 400,
     "position_n": 20,
@@ -323,7 +323,8 @@
     "revision": 0,
     "sleep_timeout": 1
   },
+  "revision": 97748,
   "stats": {
-    "age": 244418
+    "age": 374201
   }
 }

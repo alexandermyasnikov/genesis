@@ -649,22 +649,18 @@ namespace genesis_n {
     TRACE_GENESIS;
     JSON_SAVE2(json, context, config);
     {
-      std::vector<cell_t> cells;
-      cells.reserve(context.cells.size());
-      for (const auto& [_, cell] : context.cells) {
-        cells.push_back(cell);
+      auto& cells = json["cells"];
+      for (const auto& [key, cell] : context.cells) {
+        cells[std::to_string(key)] = cell;
       }
-      JSON_SAVE(json, cells);
     }
     {
-      std::vector<bacteria_t> bacterias;
-      bacterias.reserve(context.bacterias.size());
-      for (const auto& [_, bacteria] : context.bacterias) {
+      auto& bacterias = json["bacterias"];
+      for (const auto& [key, bacteria] : context.bacterias) {
         if (bacteria) {
-          bacterias.push_back(*bacteria);
+          bacterias[std::to_string(key)] = *bacteria;
         }
       }
-      JSON_SAVE(json, bacterias);
     }
     JSON_SAVE2(json, context, stats);
     JSON_SAVE2(json, context, revision);
@@ -674,16 +670,16 @@ namespace genesis_n {
     TRACE_GENESIS;
     JSON_LOAD2(json, context, config);
     {
-      std::vector<cell_t> cells;
-      JSON_LOAD(json, cells);
-      for (const auto& cell : cells) {
+      auto& cells = json["cells"];
+      for (auto& cell_json : cells) {
+        cell_t cell = cell_json;
         context.cells[cell.pos] = std::move(cell);
       }
     }
     {
-      std::vector<bacteria_t> bacterias;
-      JSON_LOAD(json, bacterias);
-      for (const auto& bacteria : bacterias) {
+      auto& bacterias = json["bacterias"];
+      for (auto& bacteria_json : bacterias) {
+        bacteria_t bacteria = bacteria_json;
         context.bacterias[bacteria.pos] = std::make_shared<bacteria_t>(std::move(bacteria));
       }
     }
