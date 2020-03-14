@@ -20,18 +20,18 @@
       {
         var width = 600;
         var height = 600;
-        var address = "192.168.0.106:8000";
-        var url_parameters = "http://" + address + "/parameters.json";
-        var url_world = "http://" + address + "/world.json";
-        var parameters = null;
-        var sleep = 100;
+        var address = "192.168.0.103:8000";
+        var url_world = "http://" + address + "/genesis/world";
+        var revision_config = -1;
+        var revision_world = 0;
+        var sleep = 1000;
         var x0 = 0;
         var y0 = 0;
         var w = 0;
         var h = 0;
         var scale = 0;
         var world;
-        var bot_ind = -1;
+        var cell_ind = -1;
         var mode = "normal";
 
         function mod(n, m) {
@@ -43,57 +43,42 @@
           xhr.open('GET', url, true);
           xhr.responseType = 'json';
           xhr.onload = function() {
-            var status = xhr.status;
-            if (status === 200) {
-              callback(null, xhr.response);
-            } else {
-              callback(status, xhr.response);
-            }
+            callback(xhr.status, xhr.response);
           };
           xhr.send();
         };
 
         function update() {
-          getJSON(url_parameters,
-            function(err, data) {
-              if (err !== null) {
-                console.log('error: ' + err);
+          getJSON(url_world + "?revision=" + revision_world,
+            function(status, data) {
+              if (status == 200) {
+                world = data;
+                draw_world();
+              } else if (status == 304) {
+                ;
               } else {
-                update_parameters(data);
-              }
-            });
-          getJSON(url_world,
-            function(err, data) {
-              if (err !== null) {
-                console.log('error: ' + err);
-              } else {
-                draw_world(data);
+                console.log('status: ' + status);
               }
             });
         }
 
-        function update_parameters(data) {
-          if (!parameters || parameters.position_n != data.position_n
-            || parameters.position_max != data.position_max)
-          {
-            w = data.position_n;
-            h = data.position_max / data.position_n;
+        function draw_world() {
+          revision_world = world.revision;
+
+          if (revision_config < world.config.revision) {
+            revision_config = world.config.revision;
+            w = world.config.position_n;
+            h = world.config.position_max / world.config.position_n;
             x0 = 0;
             y0 = 0;
           }
 
-          parameters = data;
-        }
-
-        function draw_world(data) {
-          world = data
-
-          w = Math.min(w, parameters.position_n);
-          h = Math.min(h, parameters.position_max / parameters.position_n);
+          w = Math.min(w, world.config.position_n);
+          h = Math.min(h, world.config.position_max / world.config.position_n);
           x0 = Math.max(x0, 0);
           y0 = Math.max(y0, 0);
-          x0 = Math.min(x0, parameters.position_n - w);
-          y0 = Math.min(y0, (parameters.position_max / parameters.position_n) - h);
+          x0 = Math.min(x0, world.config.position_n - w);
+          y0 = Math.min(y0, (world.config.position_max / world.config.position_n) - h);
 
           scale_n = width / w;
           scale_m = height / h;
@@ -105,29 +90,14 @@
           ctx.scale(scale, scale);
           ctx.translate(-x0, -y0);
 
-          var bot_info = null;
-          for (const bot of world.bots) {
-            let x = Math.floor(bot.position % parameters.position_n);
-            let y = Math.floor(bot.position / parameters.position_n);
-            const reducer_sum = (accumulator, currentValue) => accumulator + currentValue;
-            let color;
-            if (mode == "energy") {
-              let r = (255 * bot.energy / parameters.bot_energy_max) % 255;
-              let g = 0;
-              let b = 0;
-              color = "rgba("+r+","+g+","+b+", 0.8)";
-            } else if (mode == "name") {
-              const hash_code = s => s.split('').reduce((a,b) => (((a << 5) - a) + b.charCodeAt(0))|0, 0);
-              let r = mod(hash_code(bot.name), 255);
-              let g = 0;
-              let b = 0;
-              color = "rgba("+r+","+g+","+b+", 0.8)";
-              // console.log(bot.name, r);
-            } else {
-              let r = bot.code.reduce(reducer_sum) % 255;
-              let g = bot.regs.reduce(reducer_sum) % 255;
-              let b = bot.interrupts.reduce(reducer_sum) % 255;
-              color = "rgba("+r+","+g+","+b+", 0.8)";
+          for (const cell of world.cells) {
+            let x = Math.floor(cell.pos % world.config.position_n);
+            let y = Math.floor(cell.pos / world.config.position_n);
+            let color = "rgba(100, 100, 100, 0.8)";
+            if (cell.type == "producer") {
+              color = "rgba(0, 180, 0, 0.8)";
+            } else if (cell.type == "spore") {
+              color = "rgba(180, 0, 0, 0.8)";
             }
 
             if (x >= x0 - 1
@@ -136,30 +106,61 @@
               && y <= y + h + 1)
             {
               ctx.fillStyle = color;
-              ctx.beginPath();
-              ctx.arc(x + 0.5, y + 0.5, 0.5, 0, 2 * Math.PI);
-              ctx.fill()
-            }
-
-            if (bot.position == bot_ind) {
-              bot_info = bot;
+              let delta = 0.05;
+              ctx.fillRect(x + delta, y + delta, 1 - 2 * delta, 1 - 2 * delta);
             }
           }
 
-          if (bot_info) {
+          for (const bacteria of world.bacterias) {
+            let x = Math.floor(bacteria.pos % world.config.position_n);
+            let y = Math.floor(bacteria.pos / world.config.position_n);
+            let color = "rgba(0, 0, 100, 0.8)";
+
+            if (x >= x0 - 1
+              && x <= x0 + h + 1
+              && y >= y0 - 1
+              && y <= y + h + 1)
+            {
+              let delta = 0.2;
+              ctx.fillStyle = color;
+              ctx.beginPath();
+              ctx.arc(x + 0.5, y + 0.5, 0.5 - delta, 0, 2 * Math.PI);
+              ctx.fill()
+            }
+          }
+
+          for (const cell of world.cells) {
+            if (cell_ind == cell.pos) {
+              let cell_json = JSON.stringify(cell, null, 2);
+              console.log(cell_json);
+            }
+          }
+
+          for (const bacteria of world.bacterias) {
+            if (cell_ind == bacteria.pos) {
+              let cell_json = JSON.stringify(bacteria, null, 2);
+              console.log(cell_json);
+            }
+          }
+
+          if (true) {
             ctx.save()
             ctx.resetTransform();
             ctx.font = "20px Arial";
-            ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+            ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
+            let t_scale = Math.floor(scale);
+            let t_x0 = Math.floor(x0);
+            let t_y0 = Math.floor(y0);
+            let t_x1 = Math.floor(t_x0 + w);
+            let t_y1 = Math.floor(t_y0 + h);
             text = [
-              "age:        " + bot_info.age,
-              "name:     " + bot_info.name,
-              "energy:   " + bot_info.energy,
-              "mineral:  " + bot_info.mineral,
-              "sunlight: " + bot_info.sunlight,
+              "scale:    " + t_scale,
+              "window:   " + t_x0 + " " + t_y0 + " " + t_x1 + " " + t_y1,
+              "age:      " + world.stats.age,
+              "mode:     " + mode,
             ];
             for (const i in text) {
-              ctx.fillText(text[i], 10, 20 + 20 * i);
+              ctx.fillText(text[i], 10, 20 + 22 * i);
             }
             ctx.restore();
           }
@@ -176,26 +177,26 @@
           var y = e.clientY - rect.top;
           x = Math.floor(x0 + x / scale);
           y = Math.floor(y0 + y / scale);
-          var ind = y * parameters.position_n + x;
-          if (bot_ind != ind) {
-            bot_ind = ind;
-            draw_world(world);
+          var ind = y * world.config.position_n + x;
+          if (cell_ind != ind) {
+            cell_ind = ind;
+            draw_world();
           }
         });
 
         window.addEventListener('keydown', e => {
           if (e.key == "ArrowUp") {
             y0 -= 0.1 * h;
-            draw_world(world);
+            draw_world();
           } else if (e.key == "ArrowDown") {
             y0 += 0.1 * h;
-            draw_world(world);
+            draw_world();
           } else if (e.key == "ArrowLeft") {
             x0 -= 0.1 * w;
-            draw_world(world);
+            draw_world();
           } else if (e.key == "ArrowRight") {
             x0 += 0.1 * w;
-            draw_world(world);
+            draw_world();
           } else if (e.key == "+") {
             const dx = 0.2 * w;
             const dy = 0.2 * h;
@@ -203,7 +204,7 @@
             y0 += dy / 2;
             w -= dx;
             h -= dy;
-            draw_world(world);
+            draw_world();
           } else if (e.key == "-") {
             const dx = 0.2 * w;
             const dy = 0.2 * h;
@@ -211,7 +212,7 @@
             y0 -= dy / 2;
             w += dx;
             h += dy;
-            draw_world(world);
+            draw_world();
           }
         });
 
