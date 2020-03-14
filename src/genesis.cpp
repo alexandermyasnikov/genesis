@@ -242,6 +242,7 @@ namespace genesis_n {
     cells_t       cells         = {};
     bacterias_t   bacterias     = {};
     stats_t       stats         = {};
+    uint64_t      revision      = {};
 
     bool validation();
   };
@@ -363,7 +364,7 @@ namespace genesis_n {
           for (const auto& [key, val] : headers) {
             LOG_GENESIS(EPOLL, "header: %s: %s", key.c_str(), val.c_str());
             if (key == CONTENT_LENGTH) {
-              content_length = std::stol(val);
+              content_length = std::stol(val); // XXX exception
             }
           }
 
@@ -666,6 +667,7 @@ namespace genesis_n {
       JSON_SAVE(json, bacterias);
     }
     JSON_SAVE2(json, context, stats);
+    JSON_SAVE2(json, context, revision);
   }
 
   inline void from_json(const nlohmann::json& json, context_t& context) {
@@ -686,6 +688,7 @@ namespace genesis_n {
       }
     }
     JSON_LOAD2(json, context, stats);
+    JSON_LOAD2(json, context, revision);
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -1238,7 +1241,7 @@ namespace genesis_n {
 
     if (cache_world_ms < time_ms) {
       LOG_GENESIS(TIME, "cache_world_ms %zd   %zd", time_ms, time_ms - cache_world_ms);
-      cache_world_ms = time_ms + ctx.config.interval_save_world_ms;
+      cache_world_ms = time_ms + ctx.config.interval_cache_world_ms;
       ctx_json = ctx;
       ctx_str = ctx_json.dump();
       need_sleep = false;
@@ -1302,6 +1305,8 @@ namespace genesis_n {
     {
       ctx.stats.age++;
     }
+
+    ctx.revision++;
   }
 
   void world_t::update_cell_total(cell_t& cell) {
@@ -1804,10 +1809,12 @@ namespace genesis_n {
           uint64_t revision = {};
           auto it = http_parser.params.find("revision");
           if (it != http_parser.params.end()) {
-            revision = stol(it->second);
+            revision = stol(it->second); // XXX exception
           }
+          uint64_t revision_ctx = world.ctx_json.value("revision", uint64_t{});
 
-          if (revision < world.ctx.stats.age) {
+          LOG_GENESIS(EPOLL, "revision: %zd   %zd", revision, revision_ctx);
+          if (revision < revision_ctx) {
             http_parser_resp.body = world.ctx_str;
             http_parser_resp.code = http_parser_t::CODE_200;
           } else {
@@ -1822,6 +1829,7 @@ namespace genesis_n {
         http_parser_resp.headers[http_parser_t::CONTENT_LENGTH] = std::to_string(http_parser_resp.body.size());
         http_parser_resp.headers[http_parser_t::CONTENT_TYPE]   = http_parser_t::APPLICATION_JSON;
         http_parser_resp.headers[http_parser_t::CONNECTION]     = http_parser_t::KEEP_ALIVE;
+        http_parser_resp.headers["Access-Control-Allow-Origin"] =  "*";
 
         http_parser_resp.write();
 
