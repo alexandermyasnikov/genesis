@@ -39,7 +39,7 @@
         58,
         52
       ],
-      "rip": 7
+      "rip": 1184
     },
     {
       "code": [
@@ -80,12 +80,12 @@
         81,
         170
       ],
-      "rip": 7
+      "rip": 1268
     }
   ],
   "cells": [
     {
-      "age": 304403,
+      "age": 322220,
       "family": "dev_test",
       "health": 100,
       "pipes": [
@@ -109,7 +109,7 @@
       "type": "producer"
     },
     {
-      "age": 300333,
+      "age": 318150,
       "family": "dev_test",
       "health": 100,
       "pipes": [
@@ -132,7 +132,7 @@
       "type": "producer"
     },
     {
-      "age": 295513,
+      "age": 313330,
       "family": "dev_test",
       "health": 100,
       "pipes": [
@@ -155,7 +155,7 @@
       "type": "producer"
     },
     {
-      "age": 295513,
+      "age": 313330,
       "family": "dev_test",
       "health": 100,
       "pipes": [],
@@ -232,13 +232,13 @@
     "debug": [
       "_args ",
       "_debug",
+      "_time ",
       "_trace",
       "epoll",
-      "error",
-      "time "
+      "error"
     ],
     "health_max": 100,
-    "interval_cache_world_ms": 10,
+    "interval_cache_world_ms": 100,
     "interval_save_world_ms": 60000,
     "interval_update_epoll_ms": 1,
     "interval_update_world_ms": 100,
@@ -321,9 +321,9 @@
       }
     },
     "revision": 0,
-    "sleep_timeout": 5
+    "sleep_timeout": 1
   },
   "stats": {
-    "age": 226601
+    "age": 244418
   }
 }

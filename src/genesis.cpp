@@ -253,17 +253,24 @@ namespace genesis_n {
 
     buffer_t      buffer           = {};
 
-    std::string   path             = {};
-    params_t      params           = {};
+    // req, resp
     headers_t     headers          = {};
     std::string   body             = {};
 
-    uint64_t      state            = {};
+    // req
+    std::string   path             = {};
+    params_t      params           = {};
     uint64_t      content_length   = {};
+    uint64_t      state            = {};
     bool          is_end           = false;
+
+    // resp
+    std::string   code             = {};
 
     inline static const std::string NL               = "\r\n";
     inline static const std::string CODE_200         = "200 OK";
+    inline static const std::string CODE_304         = "304 Not Modified";
+    inline static const std::string CODE_404         = "404 Not Found";
     inline static const std::string CONTENT_LENGTH   = "Content-Length";
     inline static const std::string CONTENT_TYPE     = "Content-Type";
     inline static const std::string CONNECTION       = "Connection";
@@ -319,6 +326,8 @@ namespace genesis_n {
                   }
                   query = base_match.suffix();
                 }
+              } else {
+                path = url;
               }
               LOG_GENESIS(EPOLL, "path: %s",   path.c_str());
             }
@@ -383,7 +392,7 @@ namespace genesis_n {
       TRACE_GENESIS;
 
       std::stringstream ss;
-      ss << "HTTP/1.1 " << CODE_200 << NL;
+      ss << "HTTP/1.1 " << code << NL;
       for (const auto& [key, val] : headers) {
         ss << key << ": " << val << NL;
       }
@@ -1789,14 +1798,32 @@ namespace genesis_n {
       http_parser.read();
 
       if (http_parser.is_end) {
-        auto& http_parser = buffers[fd].second;
+        auto& http_parser_resp = buffers[fd].second;
 
-        http_parser.body = world.ctx_str;
-        http_parser.headers[http_parser_t::CONTENT_LENGTH] = std::to_string(http_parser.body.size());
-        http_parser.headers[http_parser_t::CONTENT_TYPE]   = http_parser_t::APPLICATION_JSON;
-        http_parser.headers[http_parser_t::CONNECTION]     = http_parser_t::KEEP_ALIVE;
+        if (http_parser.path == "/genesis/world") {
+          uint64_t revision = {};
+          auto it = http_parser.params.find("revision");
+          if (it != http_parser.params.end()) {
+            revision = stol(it->second);
+          }
 
-        http_parser.write();
+          if (revision < world.ctx.stats.age) {
+            http_parser_resp.body = world.ctx_str;
+            http_parser_resp.code = http_parser_t::CODE_200;
+          } else {
+            http_parser_resp.body = {};
+            http_parser_resp.code = http_parser_t::CODE_304;
+          }
+        } else {
+          http_parser_resp.body = {};
+          http_parser_resp.code = http_parser_t::CODE_404;
+        }
+
+        http_parser_resp.headers[http_parser_t::CONTENT_LENGTH] = std::to_string(http_parser_resp.body.size());
+        http_parser_resp.headers[http_parser_t::CONTENT_TYPE]   = http_parser_t::APPLICATION_JSON;
+        http_parser_resp.headers[http_parser_t::CONNECTION]     = http_parser_t::KEEP_ALIVE;
+
+        http_parser_resp.write();
 
         if (set_epoll_ctl(fd, EPOLLIN | EPOLLOUT, EPOLL_CTL_MOD) < 0) {
           close(fd);
