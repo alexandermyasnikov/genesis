@@ -20,11 +20,11 @@
       {
         var width = 600;
         var height = 600;
-        var address = "192.168.0.103:8000";
+        var address = "127.0.0.1:8000";
         var url_world = "http://" + address + "/genesis/world";
         var revision_config = -1;
         var revision_world = 0;
-        var sleep = 1000;
+        var sleep = 100;
         var x0 = 0;
         var y0 = 0;
         var w = 0;
@@ -90,48 +90,60 @@
           ctx.scale(scale, scale);
           ctx.translate(-x0, -y0);
 
-          for (const key in world.cells) {
-            const cell = world.cells[key];
-            let x = Math.floor(cell.pos % world.config.position_n);
-            let y = Math.floor(cell.pos / world.config.position_n);
-            let color = "rgba(100, 100, 100, 0.8)";
-            if (cell.type == "producer") {
-              color = "rgba(0, 180, 0, 0.8)";
-            } else if (cell.type == "spore") {
-              color = "rgba(180, 0, 0, 0.8)";
-            }
+          if (world.cells) {
+            for (const key in world.cells) {
+              const cell = world.cells[key];
+              let x = Math.floor(cell.pos % world.config.position_n);
+              let y = Math.floor(cell.pos / world.config.position_n);
+              let color = "rgba(100, 100, 100, 0.8)";
+              if (cell.type == "producer") {
+                color = "rgba(0, 180, 0, 0.5)";
+              } else if (cell.type == "spore") {
+                color = "rgba(180, 0, 0, 0.5)";
+              }
 
-            if (x >= x0 - 1
-              && x <= x0 + h + 1
-              && y >= y0 - 1
-              && y <= y + h + 1)
-            {
-              ctx.fillStyle = color;
-              let delta = 0.05;
-              ctx.fillRect(x + delta, y + delta, 1 - 2 * delta, 1 - 2 * delta);
-            }
-          }
-
-          for (const key in world.bacterias) {
-            const bacteria = world.bacterias[key];
-            let x = Math.floor(bacteria.pos % world.config.position_n);
-            let y = Math.floor(bacteria.pos / world.config.position_n);
-            let color = "rgba(0, 0, 100, 0.8)";
-
-            if (x >= x0 - 1
-              && x <= x0 + h + 1
-              && y >= y0 - 1
-              && y <= y + h + 1)
-            {
-              let delta = 0.2;
-              ctx.fillStyle = color;
-              ctx.beginPath();
-              ctx.arc(x + 0.5, y + 0.5, 0.5 - delta, 0, 2 * Math.PI);
-              ctx.fill()
+              if (x >= x0 - 1
+                && x <= x0 + h + 1
+                && y >= y0 - 1
+                && y <= y + h + 1)
+              {
+                ctx.fillStyle = color;
+                let delta = 0.05;
+                ctx.fillRect(x + delta, y + delta, 1 - 2 * delta, 1 - 2 * delta);
+              }
             }
           }
 
-          {
+          if (world.bacterias) {
+            for (const key in world.bacterias) {
+              const bacteria = world.bacterias[key];
+              let x = Math.floor(bacteria.pos % world.config.position_n);
+              let y = Math.floor(bacteria.pos / world.config.position_n);
+              let color = "rgba(0, 0, 200, 1)";
+
+              if (x >= x0 - 1
+                && x <= x0 + h + 1
+                && y >= y0 - 1
+                && y <= y + h + 1)
+              {
+                let delta = 0.2;
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(x + 0.5, y + 0.5, 0.5 - delta, 0, 2 * Math.PI);
+                ctx.fill();
+
+                color = "rgba(250, 250, 0, 1)";
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.moveTo(x + 0.5, y + 0.5);
+                let d = Math.PI / 4;
+                ctx.arc(x + 0.5, y + 0.5, 0.5 - delta, -d * (bacteria.direction + 0.5), -d * (bacteria.direction - 0.5));
+                ctx.fill();
+              }
+            }
+          }
+
+          if (world.cells) {
             const cell = world.cells[cell_ind];
             if (cell) {
               let cell_json = JSON.stringify(cell, null, 2);
@@ -139,12 +151,13 @@
             }
           }
 
-          {
+          if (world.bacterias) {
             const bacteria = world.bacterias[cell_ind];
             if (bacteria) {
               let bacteria_json = JSON.stringify(bacteria, null, 2);
               console.log(bacteria_json);
             }
+            cell_ind = -1;
           }
 
           {
@@ -176,6 +189,9 @@
         canvas.height = height;
 
         canvas.addEventListener('mousemove', e => {
+          if (!world)
+            return;
+
           var rect = canvas.getBoundingClientRect();
           var x = e.clientX - rect.left;
           var y = e.clientY - rect.top;
@@ -189,6 +205,9 @@
         });
 
         window.addEventListener('keydown', e => {
+          if (!world)
+            return;
+
           if (e.key == "ArrowUp") {
             y0 -= 0.1 * h;
             draw_world();
