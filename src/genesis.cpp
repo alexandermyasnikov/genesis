@@ -27,11 +27,13 @@
 
 #define PRODUCTION 0
 
-#define JSON_SAVE(json, name) json[#name] = name
-#define JSON_LOAD(json, name) name = json.value(#name, name)
+#define JSON_SAVE(json, name)   json[#name] = name
+#define JSON_LOAD(json, name)   name = json.value(#name, name)
 
-#define JSON_SAVE2(json, s, name) json[#name] = s.name
-#define JSON_LOAD2(json, s, name) s.name = json.value(#name, s.name)
+#define JSON_SAVE2(json, s, name)   json[#name] = s.name
+#define JSON_LOAD2(json, s, name)   s.name = json.value(#name, s.name)
+
+#define SAFE_INDEX(cont, ind)   cont[(ind) % cont.size()]
 
 #if PRODUCTION
   #define TRACE_GENESIS
@@ -93,8 +95,8 @@ namespace genesis_n {
         { ERROR, DEBUG, TRACE, ARGS };
 #endif
 
-    inline static std::set<std::string> directions = {
-        DIR_L, DIR_R, DIR_U, DIR_D, DIR_LU, DIR_LD, DIR_RU, DIR_RD };
+    inline static std::vector<std::string> directions = {
+        DIR_R, DIR_U, DIR_U, DIR_LU, DIR_L, DIR_LD, DIR_D, DIR_RD };
     inline static std::set<std::string> cell_types = { PRODUCER, SPORE, DEFENDER };
 
     static uint64_t n(const config_t& config);
@@ -103,12 +105,15 @@ namespace genesis_n {
     static uint64_t position_from_xy(const config_t& config, uint64_t x, uint64_t y);
     static uint64_t distance(const config_t& config, uint64_t position, uint64_t x, uint64_t y);
     static uint64_t position_next(const config_t& config, uint64_t position, const std::string& direction);
+    static uint64_t position_next(const config_t& config, uint64_t position, uint64_t direction);
 
     static void rename(const std::string& name_old, const std::string& name_new);
     static void remove(const std::string& name);
     static bool load(nlohmann::json& json, const std::string& name);
     static bool save(const nlohmann::json& json, const std::string& name);
-    static size_t rand_u64();
+    static uint64_t rand_u64();
+    static uint64_t hash_mix(uint64_t a);
+    static uint64_t fasthash64(uint64_t v, uint64_t seed);
   };
 
   struct bacteria_t {
@@ -117,9 +122,13 @@ namespace genesis_n {
 
     std::string   family       = {};
     code_t        code         = {};
-    registers_t   registers    = {};
+    registers_t   registers    = {}; // deprecated
     uint64_t      rip          = 0;
     uint64_t      pos          = utils_t::npos;
+    uint64_t      age          = {};
+    int64_t       health       = {};
+    uint64_t      direction    = {};
+    uint64_t      energy_step  = {};
 
     bool validation(const config_t& config);
   };
@@ -445,7 +454,7 @@ namespace genesis_n {
     void update_cell_total(cell_t& cell);
     void update_cell_producer(cell_t& cell);
     void update_cell_spore(cell_t& cell);
-    void update_bacteria(bacteria_t& bacteria);
+    void update_bacteria(bacteria_sptr_t bacteria);
     bool update_cell_recipe(cell_t& cell, const std::string& recipe_name);
     void init();
     void load();
@@ -591,6 +600,9 @@ namespace genesis_n {
     JSON_SAVE2(json, bacteria, registers);
     JSON_SAVE2(json, bacteria, rip);
     JSON_SAVE2(json, bacteria, pos);
+    JSON_SAVE2(json, bacteria, age);
+    JSON_SAVE2(json, bacteria, health);
+    JSON_SAVE2(json, bacteria, direction);
   }
 
   inline void from_json(const nlohmann::json& json, bacteria_t& bacteria) {
@@ -600,6 +612,9 @@ namespace genesis_n {
     JSON_LOAD2(json, bacteria, registers);
     JSON_LOAD2(json, bacteria, rip);
     JSON_LOAD2(json, bacteria, pos);
+    JSON_LOAD2(json, bacteria, age);
+    JSON_LOAD2(json, bacteria, health);
+    JSON_LOAD2(json, bacteria, direction);
   }
 
   inline void to_json(nlohmann::json& json, const cell_t& cell) {
@@ -722,17 +737,23 @@ namespace genesis_n {
     }
     code.resize(config.code_size);
 
-    rip %= config.code_size;
-
     while (registers.size() < config.registers_size) {
       registers.push_back(utils_t::rand_u64() % 0xFF);
     }
     registers.resize(config.registers_size);
 
+    // rip
+
     if (pos >= config.position_max) {
       LOG_GENESIS(ERROR, "invalid bacteria_t::pos %zd", pos);
       return false;
     }
+
+    // age
+
+    health = std::min(health, (int64_t) config.health_max);
+
+    direction %= 8;
 
     return true;
   }
@@ -915,7 +936,9 @@ namespace genesis_n {
   bool cell_pipe_t::validation(const config_t& config) {
     TRACE_GENESIS;
 
-    if (!utils_t::directions.contains(direction)) {
+    if (std::find(utils_t::directions.begin(), utils_t::directions.end(), direction)
+        == utils_t::directions.end())
+    {
       LOG_GENESIS(ERROR, "invalid cell_pipe_t::direction %s", direction.c_str());
       return false;
     }
@@ -1092,6 +1115,36 @@ namespace genesis_n {
     return ret;
   }
 
+  uint64_t utils_t::position_next(const config_t& config, uint64_t position, uint64_t direction) {
+    TRACE_GENESIS;
+    LOG_GENESIS(ARGS, "position:  %zd", position);
+    LOG_GENESIS(ARGS, "direction: %zd", direction);
+    uint64_t ret = npos;
+    auto [x, y] = position_to_xy(config, position);
+
+    if (x == npos || y == npos) {
+      return npos;
+    }
+
+    int dx = 0;
+    int dy = 0;
+    switch (direction) {
+      case 0:  dx =  1; dy =  0; break;
+      case 1:  dx =  1; dy = -1; break;
+      case 2:  dx =  0; dy = -1; break;
+      case 3:  dx = -1; dy = -1; break;
+      case 4:  dx = -1; dy =  0; break;
+      case 5:  dx = -1; dy =  1; break;
+      case 6:  dx =  0; dy =  1; break;
+      case 7:  dx =  1; dy =  1; break;
+      default: return npos;
+    }
+
+    ret = position_from_xy(config, x + dx, y + dy);
+    LOG_GENESIS(ARGS, "ret: %zd", ret);
+    return ret;
+  }
+
   uint64_t utils_t::position_next(const config_t& config, uint64_t position, const std::string& direction) {
     TRACE_GENESIS;
     LOG_GENESIS(ARGS, "position: %zd", position);
@@ -1204,11 +1257,28 @@ namespace genesis_n {
     }
   }
 
-  size_t utils_t::rand_u64() {
+  uint64_t utils_t::rand_u64() {
     TRACE_GENESIS;
     static std::mt19937 gen(seed);
-    static std::uniform_int_distribution<size_t> dis;
+    static std::uniform_int_distribution<uint64_t> dis;
     return dis(gen);
+  }
+
+  uint64_t utils_t::hash_mix(uint64_t h) {
+    h ^= h >> 23;
+    h *= 0x2127599bf4325c37ULL;
+    h ^= h >> 47;
+    return h;
+  }
+
+  uint64_t utils_t::fasthash64(uint64_t v, uint64_t seed) {
+    TRACE_GENESIS;
+    static uint64_t m = 0x880355f21e6d1965ULL;
+    uint64_t h = seed ^ m;
+    h ^= hash_mix(v);
+    h *= m;
+    return hash_mix(h);
+
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -1281,21 +1351,33 @@ namespace genesis_n {
           || (cell.resources.contains(utils_t::ENERGY)
               && !cell.resources.at(utils_t::ENERGY).count); });
 
-    for (auto& [_, bacteria] : ctx.bacterias) {
+    for (auto [_, bacteria] : ctx.bacterias) {
       if (!bacteria) {
         continue;
       }
 
-      update_bacteria(*bacteria);
+      update_bacteria(bacteria);
     }
 
-    /*
     std::erase_if(ctx.bacterias, [](const auto& kv) {
         const auto& bacteria = kv.second;
-        return !bacteria.health
-          || (bacteria.resources.contains(utils_t::ENERGY)
-              && !bacteria.resources.at(utils_t::ENERGY).count); });
-    */
+        return !bacteria
+          || bacteria->health < 0; });
+
+    uint16_t count_min  = 0.1 * ctx.config.position_n;
+    uint16_t count_need = 1.0 * ctx.config.position_n;
+    if (ctx.bacterias.size() < count_min) {
+      for (size_t i{}; i < count_need; ++i) {
+        auto bacteria = std::make_shared<bacteria_t>();
+        bacteria->family    = "r" + std::to_string(utils_t::rand_u64());
+        bacteria->pos       = utils_t::rand_u64() % ctx.config.position_max;
+        bacteria->health    = utils_t::rand_u64() % ctx.config.health_max;
+        bacteria->direction = utils_t::rand_u64();
+        if (bacteria->validation(ctx.config) && !ctx.bacterias.contains(bacteria->pos)) {
+          ctx.bacterias[bacteria->pos] = bacteria;
+        }
+      }
+    }
 
     // stats
     {
@@ -1376,10 +1458,10 @@ namespace genesis_n {
     }
   }
 
-  void world_t::update_bacteria(bacteria_t& bacteria) {
+  void world_t::update_bacteria(bacteria_sptr_t bacteria) {
     TRACE_GENESIS;
 
-    uint8_t cmd = bacteria.code[(bacteria.rip++) % bacteria.code.size()];
+    uint8_t cmd = bacteria->code[(bacteria->rip++) % bacteria->code.size()];
     LOG_GENESIS(MIND, "cmd: %zd", cmd);
 
     switch (cmd) {
@@ -1389,81 +1471,104 @@ namespace genesis_n {
 
       } case 1: {
         LOG_GENESIS(MIND, "RET");
-        bacteria.rip = 0;
+        bacteria->rip = 0;
         break;
 
       } case 2: {
-        uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        uint8_t arg1 = bacteria->code[(bacteria->rip++) % bacteria->code.size()] % bacteria->registers.size();
         LOG_GENESIS(MIND, "BR <%%%d>", arg1);
-        bacteria.rip += bacteria.registers[arg1];
+        bacteria->rip += bacteria->registers[arg1];
         break;
 
       } case 3: {
-        uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
-        uint8_t arg2 = bacteria.code[(bacteria.rip++) % bacteria.code.size()];
+        uint8_t arg1 = bacteria->code[(bacteria->rip++) % bacteria->code.size()] % bacteria->registers.size();
+        uint8_t arg2 = bacteria->code[(bacteria->rip++) % bacteria->code.size()];
         LOG_GENESIS(MIND, "SET <%%%d> <%d>", arg1, arg2);
-        bacteria.registers[arg1] = arg2;
+        bacteria->registers[arg1] = arg2;
         break;
 
       } case 4: {
-        uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
-        uint8_t arg2 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        uint8_t arg1 = bacteria->code[(bacteria->rip++) % bacteria->code.size()] % bacteria->registers.size();
+        uint8_t arg2 = bacteria->code[(bacteria->rip++) % bacteria->code.size()] % bacteria->registers.size();
         LOG_GENESIS(MIND, "MOV <%%%d> <%%%d>", arg1, arg2);
-        bacteria.registers[arg1] = bacteria.registers[arg2];
+        bacteria->registers[arg1] = bacteria->registers[arg2];
         break;
 
       } case 5: {
-        uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
-        uint8_t arg2 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
-        uint8_t arg3 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        uint8_t arg1 = bacteria->code[(bacteria->rip++) % bacteria->code.size()] % bacteria->registers.size();
+        uint8_t arg2 = bacteria->code[(bacteria->rip++) % bacteria->code.size()] % bacteria->registers.size();
+        uint8_t arg3 = bacteria->code[(bacteria->rip++) % bacteria->code.size()] % bacteria->registers.size();
         LOG_GENESIS(MIND, "ADD <%%%d> <%%%d> <%%%d>", arg1, arg2, arg3);
-        bacteria.registers[arg1] = bacteria.registers[arg2] + bacteria.registers[arg3];
+        bacteria->registers[arg1] = bacteria->registers[arg2] + bacteria->registers[arg3];
         break;
 
       } case 6: {
-        uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
-        uint8_t arg2 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
-        uint8_t arg3 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        uint8_t arg1 = bacteria->code[(bacteria->rip++) % bacteria->code.size()] % bacteria->registers.size();
+        uint8_t arg2 = bacteria->code[(bacteria->rip++) % bacteria->code.size()] % bacteria->registers.size();
+        uint8_t arg3 = bacteria->code[(bacteria->rip++) % bacteria->code.size()] % bacteria->registers.size();
         LOG_GENESIS(MIND, "SUB <%%%d> <%%%d> <%%%d>", arg1, arg2, arg3);
-        bacteria.registers[arg1] = bacteria.registers[arg2] - bacteria.registers[arg3];
+        bacteria->registers[arg1] = bacteria->registers[arg2] - bacteria->registers[arg3];
         break;
 
         // MULT
         // DIV
         // IF
 
-      } case 32: {
-        uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
-        LOG_GENESIS(MIND, "MOVE <%%%d>", arg1);
+      } case 16: {
+        uint8_t args = bacteria->code[(bacteria->rip++) % bacteria->code.size()];
+        uint8_t arg1_addr = args++ * bacteria->code[0] + bacteria->code[1];
+        uint8_t arg1 = bacteria->code[arg1_addr % bacteria->code.size()];
+        bacteria->direction = (bacteria->direction + arg1) % 8;
+        LOG_GENESIS(MIND, "DIRECTION <%d> <%%%d=%d>", args, arg1_addr, arg1);
+        break;
+
+      } case 17: {
+        uint8_t args = SAFE_INDEX(bacteria->code, bacteria->rip++);
+        uint8_t arg1 = SAFE_INDEX(bacteria->code, utils_t::fasthash64(args++, bacteria->code[0]));
+        uint8_t arg2 = SAFE_INDEX(bacteria->code, utils_t::fasthash64(args++, bacteria->code[0]));
+        uint8_t arg3 = SAFE_INDEX(bacteria->code, utils_t::fasthash64(args++, bacteria->code[0]));
+        bacteria->direction = (bacteria->direction + arg1) % 8;
+        LOG_GENESIS(MIND, "LOOK <%d> <%d> <%d> <%d>", args, arg1, arg2, arg3);
         // TODO
         break;
 
+      } case 18: {
+        LOG_GENESIS(MIND, "MOVE");
+
+        uint64_t pos_next = utils_t::position_next(ctx.config, bacteria->pos, bacteria->direction);
+        if (pos_next != utils_t::npos && !ctx.bacterias.contains(pos_next)) {
+          ctx.bacterias[pos_next] = bacteria;
+          ctx.bacterias[bacteria->pos].reset();
+          bacteria->pos = pos_next;
+        }
+        break;
+
       } case 33: {
-        uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        uint8_t arg1 = bacteria->code[(bacteria->rip++) % bacteria->code.size()] % bacteria->registers.size();
         LOG_GENESIS(MIND, "GET RESOURCE <%%%d>", arg1);
         // TODO
         break;
 
       } case 34: {
-        uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        uint8_t arg1 = bacteria->code[(bacteria->rip++) % bacteria->code.size()] % bacteria->registers.size();
         LOG_GENESIS(MIND, "DELETE CELL <%%%d>", arg1);
         // TODO
         break;
 
       } case 35: {
-        uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        uint8_t arg1 = bacteria->code[(bacteria->rip++) % bacteria->code.size()] % bacteria->registers.size();
         LOG_GENESIS(MIND, "NEW CELL PRODUCER <%%%d>", arg1);
         // TODO
         break;
 
       } case 36: {
-        uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        uint8_t arg1 = bacteria->code[(bacteria->rip++) % bacteria->code.size()] % bacteria->registers.size();
         LOG_GENESIS(MIND, "NEW CELL SPORE <%%%d>", arg1);
         // TODO
         break;
 
       } case 37: {
-        uint8_t arg1 = bacteria.code[(bacteria.rip++) % bacteria.code.size()] % bacteria.registers.size();
+        uint8_t arg1 = bacteria->code[(bacteria->rip++) % bacteria->code.size()] % bacteria->registers.size();
         LOG_GENESIS(MIND, "MUTATION <%%%d>", arg1);
         // TODO
         break;
@@ -1473,6 +1578,8 @@ namespace genesis_n {
         break;
       }
     }
+
+    bacteria->health--; // XXX
   }
 
   bool world_t::update_cell_recipe(cell_t& cell, const std::string& recipe_name) {
