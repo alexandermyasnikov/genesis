@@ -53,26 +53,35 @@ namespace genesis_n {
   using bot_sptr_t = std::shared_ptr<bot_t>;
   using system_sptr_t = std::shared_ptr<system_t>;
 
+#if 0
+  struct pipe_t {
+    template <typename T>
+    void load(nlohmann::json& json, T& t);
+    template <typename T>
+    void save(nlohmann::json& json, const T& t);
+  };
+#endif
+
   struct parameters_t {
-    size_t   position_n               = 10;
-    size_t   position_max             = 100;
-    size_t   bot_code_size            = 64;
-    size_t   bot_regs_size            = 32;
-    size_t   bot_interrupts_size      = 8;
-    size_t   bot_energy_max           = 100;
-    size_t   bot_energy_daily         = 1;
-    size_t   system_min_bot_count     = position_max / 10;
-    size_t   system_max_bot_count     = position_max;
-    size_t   system_interval_stats    = 1000;
-    size_t   system_epoll_port        = 8282;
-    size_t   time_ms                  = 0;
-    size_t   interval_update_world_ms = 100;
-    size_t   interval_save_world_ms   = 60 * 1000;
-    size_t   interval_load_parameters_ms   = 60 * 1000;
-    std::string   system_epoll_ip     = "127.0.0.1";
-    std::string   world_file          = "world.json";
-    std::string   parameters_file     = "parameters.json";
-    std::set<std::string>   debug     = {"error"};
+    size_t        position_n                    = 10;
+    size_t        position_max                  = 100;
+    size_t        bot_code_size                 = 64;
+    size_t        bot_regs_size                 = 32;
+    size_t        bot_interrupts_size           = 8;
+    size_t        bot_energy_max                = 100;
+    size_t        bot_energy_daily              = 1;
+    size_t        system_min_bot_count          = position_max / 10;
+    size_t        system_max_bot_count          = position_max;
+    size_t        system_interval_stats         = 1000;
+    size_t        system_epoll_port             = 8282;
+    size_t        time_ms                       = 0;
+    size_t        interval_update_world_ms      = 100;
+    size_t        interval_save_world_ms        = 60 * 1000;
+    size_t        interval_load_parameters_ms   = 60 * 1000;
+    std::string   system_epoll_ip               = "127.0.0.1";
+    std::string   world_file                    = "world.json";
+    std::string   parameters_file               = "parameters.json";
+    std::set<std::string>   debug               = { "error" };
 
     void load(nlohmann::json& json);
     void save(nlohmann::json& json);
@@ -82,14 +91,14 @@ namespace genesis_n {
     inline static size_t seed = time(0);
     inline static parameters_t parameters = {};
 
-    inline static std::string TRACE = "trace";
-    inline static std::string EPOLL = "epoll";
-    inline static std::string STATS = "stats";
-    inline static std::string ERROR = "error";
-    inline static std::string DEBUG = "debug";
-    inline static std::string MIND  = "mind ";
-    inline static std::string TIME  = "time ";
-    inline static size_t npos       = std::string::npos;
+    inline static std::string TRACE   = "trace";
+    inline static std::string EPOLL   = "epoll";
+    inline static std::string STATS   = "stats";
+    inline static std::string ERROR   = "error";
+    inline static std::string DEBUG   = "debug";
+    inline static std::string MIND    = "mind ";
+    inline static std::string TIME    = "time ";
+    inline static size_t npos         = std::string::npos;
 
     static double rand_double();
     static size_t rand_u64();
@@ -103,6 +112,33 @@ namespace genesis_n {
     static void remove(const std::string& name);
     static bool load(nlohmann::json& json, const std::string& name);
     static bool save(const nlohmann::json& json, const std::string& name);
+  };
+
+  struct prop_t {
+    uint32_t      min;
+    uint32_t      max;
+    uint32_t      id;
+    std::string   name;
+  };
+
+  struct prop_wrapper_t {
+    uint32_t&       value;
+    const prop_t&   prop;
+
+    prop_wrapper_t(uint32_t& value, const prop_t& prop) : value(value), prop(prop) { }
+    uint32_t get_value() {
+      value = prop.min + value % (prop.max + 1 - prop.min);
+      return value;
+    }
+    uint32_t max_size() {
+      return prop.max - get_value();
+    }
+    bool can_inc(uint32_t delta) {
+      return delta < max_size();
+    }
+    void inc(uint32_t delta) {
+      value += std::min(max_size(), delta);
+    }
   };
 
   struct http_parser_t {
