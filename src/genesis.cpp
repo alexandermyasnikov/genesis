@@ -120,15 +120,15 @@ namespace genesis_n {
     using code_t      = std::vector<uint8_t>;
     using registers_t = std::vector<uint8_t>;
 
-    std::string   family       = {};
-    code_t        code         = {};
-    registers_t   registers    = {}; // deprecated
-    uint64_t      rip          = 0;
-    uint64_t      pos          = utils_t::npos;
-    uint64_t      age          = {};
-    int64_t       health       = {};
-    uint64_t      direction    = {};
-    uint64_t      energy_step  = {};
+    std::string   family             = {};
+    code_t        code               = {};
+    registers_t   registers          = {}; // deprecated
+    uint64_t      rip                = 0;
+    uint64_t      pos                = utils_t::npos;
+    uint64_t      age                = {};
+    int64_t       health             = {};
+    uint64_t      direction          = {};
+    int64_t       energy_remaining   = {}; // not save
 
     bool validation(const config_t& config);
   };
@@ -240,7 +240,8 @@ namespace genesis_n {
   };
 
   struct stats_t {
-    uint64_t      age        = {};
+    uint64_t   age               = {};
+    uint64_t   bacterias_count   = {};
   };
 
   struct context_t {
@@ -653,11 +654,13 @@ namespace genesis_n {
   inline void to_json(nlohmann::json& json, const stats_t& stats) {
     TRACE_GENESIS;
     JSON_SAVE2(json, stats, age);
+    JSON_SAVE2(json, stats, bacterias_count);
   }
 
   inline void from_json(const nlohmann::json& json, stats_t& stats) {
     TRACE_GENESIS;
     JSON_LOAD2(json, stats, age);
+    JSON_LOAD2(json, stats, bacterias_count);
   }
 
   inline void to_json(nlohmann::json& json, const context_t& context) {
@@ -1356,7 +1359,20 @@ namespace genesis_n {
         continue;
       }
 
-      update_bacteria(bacteria);
+      bacteria->energy_remaining = 10;
+    }
+
+    for (auto [_, bacteria] : ctx.bacterias) {
+      if (!bacteria) {
+        continue;
+      }
+
+      while (bacteria->energy_remaining > 0) {
+        update_bacteria(bacteria);
+        bacteria->energy_remaining--;
+      }
+
+      bacteria->health--; // XXX
     }
 
     std::erase_if(ctx.bacterias, [](const auto& kv) {
@@ -1367,7 +1383,7 @@ namespace genesis_n {
     uint16_t count_min  = 0.1 * ctx.config.position_n;
     uint16_t count_need = 1.0 * ctx.config.position_n;
     if (ctx.bacterias.size() < count_min) {
-      for (size_t i{}; i < count_need; ++i) {
+      while (ctx.bacterias.size() < count_need) {
         auto bacteria = std::make_shared<bacteria_t>();
         bacteria->family    = "r" + std::to_string(utils_t::rand_u64());
         bacteria->pos       = utils_t::rand_u64() % ctx.config.position_max;
@@ -1382,6 +1398,7 @@ namespace genesis_n {
     // stats
     {
       ctx.stats.age++;
+      ctx.stats.bacterias_count = ctx.bacterias.size();
     }
 
     ctx.revision++;
@@ -1578,8 +1595,6 @@ namespace genesis_n {
         break;
       }
     }
-
-    bacteria->health--; // XXX
   }
 
   bool world_t::update_cell_recipe(cell_t& cell, const std::string& recipe_name) {
@@ -1917,7 +1932,7 @@ namespace genesis_n {
           uint64_t revision_ctx = world.ctx_json.value("revision", uint64_t{});
 
           LOG_GENESIS(EPOLL, "revision: %zd   %zd", revision, revision_ctx);
-          if (revision < revision_ctx) {
+          if (revision != revision_ctx) {
             http_parser_resp.body = world.ctx_str;
             http_parser_resp.code = http_parser_t::CODE_200;
           } else {
