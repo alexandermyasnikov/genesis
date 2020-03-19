@@ -150,19 +150,27 @@ namespace genesis_n {
     }
   };
 
+  struct resource_t {
+    std::string   name    = {};
+    uint64_t      count   = {};
+
+    bool validation(const config_t& config);
+  };
+
   struct bacteria_t {
-    using code_t      = std::vector<uint8_t>;
+    using resources_t   = std::map<std::string/*name*/, resource_t>;
+    using code_t        = std::vector<uint8_t>;
 
     std::string   family             = {};
     code_t        code               = {};
-    uint64_t      rip                = 0;
+    resources_t   resources          = {};
     uint64_t      pos                = utils_t::npos;
     uint64_t      age                = {};
-    int64_t       health             = {};
     uint64_t      direction          = {};
     int64_t       energy_remaining   = {}; // not save
 
     bool validation(const config_t& config);
+    void init(const config_t& config);
   };
 
   using bacteria_sptr_t = std::shared_ptr<bacteria_t>;
@@ -218,13 +226,6 @@ namespace genesis_n {
     bool validation(const config_t& config);
   };
 
-  struct resource_t {
-    std::string   name    = {};
-    uint64_t      count   = utils_t::npos;
-
-    bool validation(const config_t& config);
-  };
-
   struct cell_t { // deprecated
     using resources_t        = std::map<std::string/*name*/, resource_t>;
     using pipes_t            = std::vector<cell_pipe_t>;
@@ -239,7 +240,6 @@ namespace genesis_n {
     resources_t         resources        = {};
     pipes_t             pipes            = {};
     recipes_t           recipes          = {};
-    spore_bacteria_t    spore_bacteria   = {};
 
     bool validation(const config_t& config);
   };
@@ -633,10 +633,9 @@ namespace genesis_n {
     TRACE_GENESIS;
     JSON_SAVE2(json, bacteria, family);
     JSON_SAVE2(json, bacteria, code);
-    JSON_SAVE2(json, bacteria, rip);
+    JSON_SAVE2(json, bacteria, resources);
     JSON_SAVE2(json, bacteria, pos);
     JSON_SAVE2(json, bacteria, age);
-    JSON_SAVE2(json, bacteria, health);
     JSON_SAVE2(json, bacteria, direction);
   }
 
@@ -644,10 +643,9 @@ namespace genesis_n {
     TRACE_GENESIS;
     JSON_LOAD2(json, bacteria, family);
     JSON_LOAD2(json, bacteria, code);
-    JSON_LOAD2(json, bacteria, rip);
+    JSON_LOAD2(json, bacteria, resources);
     JSON_LOAD2(json, bacteria, pos);
     JSON_LOAD2(json, bacteria, age);
-    JSON_LOAD2(json, bacteria, health);
     JSON_LOAD2(json, bacteria, direction);
   }
 
@@ -661,10 +659,6 @@ namespace genesis_n {
     JSON_SAVE2(json, cell, resources);
     JSON_SAVE2(json, cell, pipes);
     JSON_SAVE2(json, cell, recipes);
-    if (cell.spore_bacteria) {
-      const bacteria_t& spore_bacteria = *cell.spore_bacteria;
-      JSON_SAVE(json, spore_bacteria);
-    }
   }
 
   inline void from_json(const nlohmann::json& json, cell_t& cell) {
@@ -677,11 +671,6 @@ namespace genesis_n {
     JSON_LOAD2(json, cell, resources);
     JSON_LOAD2(json, cell, pipes);
     JSON_LOAD2(json, cell, recipes);
-    if (json.find("spore_bacteria") != json.end()) {
-      bacteria_t spore_bacteria;
-      JSON_LOAD(json, spore_bacteria);
-      cell.spore_bacteria = std::make_shared<bacteria_t>(std::move(spore_bacteria));
-    }
   }
 
   inline void to_json(nlohmann::json& json, const stats_t& stats) {
@@ -773,7 +762,7 @@ namespace genesis_n {
     }
     code.resize(config.code_size);
 
-    // rip
+    // resources
 
     if (pos >= config.position_max) {
       LOG_GENESIS(ERROR, "invalid bacteria_t::pos %zd", pos);
@@ -782,11 +771,23 @@ namespace genesis_n {
 
     // age
 
-    health = std::min(health, (int64_t) config.health_max);
-
     direction %= 8;
 
     return true;
+  }
+
+  void bacteria_t::init(const config_t& config) {
+    TRACE_GENESIS;
+
+    family             = "r" + std::to_string(utils_t::rand_u64());
+    // code
+    resources          = {};
+    pos                = utils_t::rand_u64() % config.position_max;
+    age                = {};
+    direction          = utils_t::rand_u64() % 8;
+    energy_remaining   = {};
+
+    resources[utils_t::ENERGY] = {utils_t::ENERGY, config.resources.at(utils_t::ENERGY).stack_size / 2 };
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -830,20 +831,6 @@ namespace genesis_n {
     for (auto& recipe_name : recipes) {
       if (!config.recipes.contains(recipe_name)) {
         LOG_GENESIS(ERROR, "invalid cell_t::recipes %s", recipe_name.c_str());
-        return false;
-      }
-    }
-
-    if ((type == utils_t::SPORE) != ((bool) spore_bacteria)) {
-      LOG_GENESIS(ERROR, "invalid cell_t::spore_bacteria");
-      return false;
-    }
-
-    if (spore_bacteria) {
-      if (spore_bacteria->pos != pos
-          || spore_bacteria->family != family
-          || !spore_bacteria->validation(config)) {
-        LOG_GENESIS(ERROR, "invalid cell_t::spore_bacteria");
         return false;
       }
     }
@@ -1138,7 +1125,9 @@ namespace genesis_n {
     auto [x1, y1] = position_to_xy(config, position);
     uint64_t ret = npos;
     if (x1 != npos && y1 != npos) {
-      ret = std::pow(std::pow(x - x1, 2) + std::pow(y - y1, 2), 0.5);
+      uint64_t dx = std::max(x, x1) - x;
+      uint64_t dy = std::max(y, y1) - y;
+      ret = std::hypot(dx, dy);
     }
     LOG_GENESIS(ARGS, "ret: %zd", ret);
     return ret;
@@ -1146,6 +1135,7 @@ namespace genesis_n {
 
   uint64_t utils_t::position_next(const config_t& config, uint64_t position, uint64_t direction) {
     TRACE_GENESIS;
+    direction %= 8;
     LOG_GENESIS(ARGS, "position:  %zd", position);
     LOG_GENESIS(ARGS, "direction: %zd", direction);
     uint64_t ret = npos;
@@ -1422,24 +1412,24 @@ namespace genesis_n {
       }
 
       bacteria->age++;
+      auto& count = bacteria->resources[utils_t::ENERGY].count;
+      if (count)
+        count--;
     }
 
     std::erase_if(ctx.bacterias, [this](const auto& kv) {
         const auto& bacteria = kv.second;
         return !bacteria
-          || bacteria->health < 0
+          || bacteria->resources[utils_t::ENERGY].count <= 0
           || bacteria->age > ctx.config.age_max; });
 
     {
-      uint16_t count_min  = 0.1 * ctx.config.position_n;
-      uint16_t count_need = 0.5 * ctx.config.position_n;
+      uint16_t count_min  = 0.5 * ctx.config.position_n;
+      uint16_t count_need = 1.0 * ctx.config.position_n;
       if (ctx.bacterias.size() < count_min) {
         while (ctx.bacterias.size() < count_need) {
           auto bacteria = std::make_shared<bacteria_t>();
-          bacteria->family    = "r" + std::to_string(utils_t::rand_u64());
-          bacteria->pos       = utils_t::rand_u64() % ctx.config.position_max;
-          bacteria->health    = utils_t::rand_u64() % ctx.config.health_max;
-          bacteria->direction = utils_t::rand_u64();
+          bacteria->init(ctx.config);
           if (bacteria->validation(ctx.config) && !ctx.bacterias.contains(bacteria->pos)) {
             ctx.bacterias[bacteria->pos] = std::move(bacteria);
           }
@@ -1513,13 +1503,7 @@ namespace genesis_n {
       }
     }
 
-    if (!cell.spore_bacteria) {
-      LOG_GENESIS(ERROR, "spore_bacteria is nullptr");
-      return;
-    }
-
     auto bacteria = std::make_shared<bacteria_t>();
-    *bacteria = *cell.spore_bacteria;
     // TODO mutation
 
     if (bacteria->validation(ctx.config)) {
@@ -1699,37 +1683,91 @@ namespace genesis_n {
         }
         break;
 
-      /*
-      } case 33: {
-        uint8_t arg1 = bacteria->code[(bacteria->rip++) % bacteria->code.size()] % bacteria->registers.size();
-        LOG_GENESIS(MIND, "GET RESOURCE <%%%d>", arg1);
-        // TODO
+      } case 19: {
+        hd.arg++;
+        uint64_t opnd1 = {};
+        uint64_t opnd1_addr = utils_t::fasthash64(&hd, sizeof(hd), seed);
+        utils_t::load_by_hash<uint16_t>(code, opnd1_addr, opnd1);
+
+        hd.arg++;
+        uint64_t opnd2 = {};
+        uint64_t opnd2_addr = utils_t::fasthash64(&hd, sizeof(hd), seed);
+        utils_t::load_by_hash<uint16_t>(code, opnd2_addr, opnd2);
+
+        LOG_GENESIS(MIND, "CLONE <%zd> <%zd>", opnd1, opnd2);
+
+        uint64_t dir = opnd1;
+        double probability = 0.1 * opnd2 / 0xFFFF;
+        uint64_t pos_next = utils_t::position_next(ctx.config, bacteria->pos, dir);
+        LOG_GENESIS(MIND, "energy: %zd", bacteria->resources[utils_t::ENERGY].count);
+        if (pos_next != utils_t::npos
+            && bacteria->resources[utils_t::ENERGY].count > 500
+            && !ctx.bacterias.contains(pos_next))
+        {
+          for (auto [_, resource]  : bacteria->resources) {
+            resource.count /= 2;
+          }
+          auto bacteria_child = std::make_shared<bacteria_t>(*bacteria);
+          bacteria_child->init(ctx.config);
+          for (auto& byte : code) {
+            if (utils_t::rand_u64() % 0xFFFF > probability) {
+              byte = utils_t::rand_u64();
+            }
+          }
+          ctx.bacterias[pos_next] = std::move(bacteria_child);
+        }
         break;
 
-      } case 34: {
-        uint8_t arg1 = bacteria->code[(bacteria->rip++) % bacteria->code.size()] % bacteria->registers.size();
-        LOG_GENESIS(MIND, "DELETE CELL <%%%d>", arg1);
-        // TODO
-        break;
+      } case 20: {
+        hd.arg++;
+        uint64_t opnd1 = {};
+        uint64_t opnd1_addr = utils_t::fasthash64(&hd, sizeof(hd), seed);
+        utils_t::load_by_hash<uint16_t>(code, opnd1_addr, opnd1);
 
-      } case 35: {
-        uint8_t arg1 = bacteria->code[(bacteria->rip++) % bacteria->code.size()] % bacteria->registers.size();
-        LOG_GENESIS(MIND, "NEW CELL PRODUCER <%%%d>", arg1);
-        // TODO
-        break;
+        LOG_GENESIS(MIND, "RECIPE <%zd>", opnd1);
 
-      } case 36: {
-        uint8_t arg1 = bacteria->code[(bacteria->rip++) % bacteria->code.size()] % bacteria->registers.size();
-        LOG_GENESIS(MIND, "NEW CELL SPORE <%%%d>", arg1);
-        // TODO
-        break;
+        [this, bacteria, opnd1]() {
+          const auto& recipes = ctx.config.recipes;
+          auto it = recipes.begin();
+          std::advance(it, opnd1 % recipes.size());
+          const auto& recipe = it->second;
+          LOG_GENESIS(MIND, "name %s", recipe.name.c_str());
 
-      } case 37: {
-        uint8_t arg1 = bacteria->code[(bacteria->rip++) % bacteria->code.size()] % bacteria->registers.size();
-        LOG_GENESIS(MIND, "MUTATION <%%%d>", arg1);
-        // TODO
+          auto& resources = bacteria->resources;
+          for (const auto& [_, recipe_item] : recipe.in) {
+            if (resources[recipe_item.name].count < recipe_item.count) {
+              return;
+            }
+          }
+
+          for (const auto& [_, recipe_item] : recipe.in) {
+            resources[recipe_item.name].count -= recipe_item.count;
+          }
+
+          for (const auto& [_, recipe_item] : recipe.out) {
+            uint64_t count = recipe_item.count;
+            const auto& resource_info = ctx.config.resources.at(recipe_item.name);
+
+            if (resource_info.extractable) {
+              double multiplier = {};
+              const auto& areas = ctx.config.areas.at(recipe_item.name);
+
+              for (const auto area : areas) {
+                uint64_t dist = utils_t::distance(ctx.config, bacteria->pos, area.x, area.y);
+                multiplier += area.factor * std::max(0.,
+                    1. - std::pow(std::abs((double) dist / area.radius), area.sigma));
+                LOG_GENESIS(MIND, "multiplier %f", multiplier);
+              }
+              count *= multiplier;
+              LOG_GENESIS(MIND, "count %zd", count);
+            }
+
+            resources[recipe_item.name].count = std::min(resource_info.stack_size,
+                resources[recipe_item.name].count + count);
+          }
+
+        }();
         break;
-      */
 
       } default: {
         LOG_GENESIS(MIND, "NOTHING");
