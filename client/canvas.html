@@ -59,10 +59,14 @@
               } else {
                 console.log('status: ' + status);
               }
+              setInterval(update, sleep);
             });
         }
 
         function draw_world() {
+          if (revision_world >= world.revision) {
+            return;
+          }
           revision_world = world.revision;
 
           if (revision_config < world.config.revision) {
@@ -89,6 +93,17 @@
           ctx.fillRect(0, 0, width, height);
           ctx.scale(scale, scale);
           ctx.translate(-x0, -y0);
+
+          for (const key in world.config.areas) {
+            const areas_v = world.config.areas[key];
+            for (const key in areas_v) {
+              const area = areas_v[key];
+              ctx.fillStyle = "rgba(0, 200, 200, 0.1)";
+              ctx.beginPath();
+              ctx.arc(area.x + 0.5, area.y + 0.5, area.radius, 0, 2 * Math.PI);
+              ctx.fill();
+            }
+          }
 
           if (world.cells) {
             for (const key in world.cells) {
@@ -126,7 +141,7 @@
                 && y >= y0 - 1
                 && y <= y + h + 1)
               {
-                let delta = 0.2;
+                let delta = 0.05;
                 ctx.fillStyle = color;
                 ctx.beginPath();
                 ctx.arc(x + 0.5, y + 0.5, 0.5 - delta, 0, 2 * Math.PI);
@@ -175,6 +190,7 @@
               "window:   " + t_x0 + " " + t_y0 + " " + t_x1 + " " + t_y1,
               "age:      " + world.stats.age,
               "mode:     " + mode,
+              "count:    " + world.stats.bacterias_count,
             ];
             for (const i in text) {
               ctx.fillText(text[i], 10, 20 + 22 * i);
@@ -240,7 +256,6 @@
         });
 
         update();
-        setInterval(update, sleep);
       }
     </script>
   </body>
