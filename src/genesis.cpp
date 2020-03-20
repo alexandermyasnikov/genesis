@@ -1125,8 +1125,8 @@ namespace genesis_n {
     auto [x1, y1] = position_to_xy(config, position);
     uint64_t ret = npos;
     if (x1 != npos && y1 != npos) {
-      uint64_t dx = std::max(x, x1) - x;
-      uint64_t dy = std::max(y, y1) - y;
+      uint64_t dx = (x >= x1) ? (x - x1) : (x1 - x);
+      uint64_t dy = (y >= y1) ? (y - y1) : (y1 - y);
       ret = std::hypot(dx, dy);
     }
     LOG_GENESIS(ARGS, "ret: %zd", ret);
@@ -1332,6 +1332,8 @@ namespace genesis_n {
     time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
 
+    LOG_GENESIS(TIME, "time %zd", time_ms);
+
     if (update_world_ms < time_ms) {
       LOG_GENESIS(TIME, "update_world_ms %zd   %zd", time_ms, time_ms - update_world_ms);
       update_world_ms = time_ms + ctx.config.interval_update_world_ms;
@@ -1424,7 +1426,7 @@ namespace genesis_n {
           || bacteria->age > ctx.config.age_max; });
 
     {
-      uint16_t count_min  = 0.5 * ctx.config.position_n;
+      uint16_t count_min  = 3; // 0.1 * ctx.config.position_n;
       uint16_t count_need = 1.0 * ctx.config.position_n;
       if (ctx.bacterias.size() < count_min) {
         while (ctx.bacterias.size() < count_need) {
@@ -1542,7 +1544,7 @@ namespace genesis_n {
     utils_t::load_by_hash<uint8_t>(code, cmd_addr, cmd);
     LOG_GENESIS(MIND, "cmd: %zd", cmd);
 
-    switch (cmd) {
+    switch (cmd % 32) {
       case 0: {
         LOG_GENESIS(MIND, "NOP");
         break;
@@ -1696,25 +1698,28 @@ namespace genesis_n {
 
         LOG_GENESIS(MIND, "CLONE <%zd> <%zd>", opnd1, opnd2);
 
-        uint64_t dir = opnd1;
+        uint64_t dir = opnd1 % 8;
         double probability = 0.1 * opnd2 / 0xFFFF;
         uint64_t pos_next = utils_t::position_next(ctx.config, bacteria->pos, dir);
+        LOG_GENESIS(MIND, "pos_next: %zd", pos_next);
         LOG_GENESIS(MIND, "energy: %zd", bacteria->resources[utils_t::ENERGY].count);
         if (pos_next != utils_t::npos
-            && bacteria->resources[utils_t::ENERGY].count > 500
+            && bacteria->resources[utils_t::ENERGY].count > 600
             && !ctx.bacterias.contains(pos_next))
         {
           for (auto [_, resource]  : bacteria->resources) {
             resource.count /= 2;
           }
+          LOG_GENESIS(MIND, "energy ok: %zd", bacteria->resources[utils_t::ENERGY].count);
           auto bacteria_child = std::make_shared<bacteria_t>(*bacteria);
-          bacteria_child->init(ctx.config);
           for (auto& byte : code) {
             if (utils_t::rand_u64() % 0xFFFF > probability) {
               byte = utils_t::rand_u64();
             }
           }
-          ctx.bacterias[pos_next] = std::move(bacteria_child);
+          if (bacteria_child->validation(ctx.config)) {
+            ctx.bacterias[pos_next] = std::move(bacteria_child);
+          }
         }
         break;
 
