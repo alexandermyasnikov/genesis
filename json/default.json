@@ -1,0 +1,92 @@
+{
+  "config": {
+    "age_max": 10000,
+    "areas": [
+      {
+        "factor": 1.0,
+        "name": "sunlight",
+        "pos": [
+          300,
+          400
+        ],
+        "radius": 100,
+        "resource": "water",
+        "sigma": 2.0
+      },
+      {
+        "factor": 1.0,
+        "name": "sunlight",
+        "pos": [
+          700,
+          300
+        ],
+        "radius": 300,
+        "resource": "sunlight",
+        "sigma": 2.0
+      },
+      {
+        "factor": 1.0,
+        "name": "sunlight",
+        "pos": [
+          90,
+          90
+        ],
+        "radius": 30,
+        "resource": "sunlight",
+        "sigma": 2.0
+      }
+    ],
+    "code_size": 100,
+    "debug": [
+      "_mind",
+      "_time",
+      "_trace",
+      "error"
+    ],
+    "energy_remaining": 5,
+    "interval_save_world_ms": 60000,
+    "interval_update_world_ms": 100,
+    "recipes": {
+      "sunlight_to_energy": {
+        "in": {
+          "sunlight": {
+            "count": 100,
+            "name": "sunlight"
+          }
+        },
+        "name": "sunlight_to_energy",
+        "out": {
+          "energy": {
+            "count": 10,
+            "name": "energy"
+          }
+        }
+      }
+    },
+    "resources": {
+      "energy": {
+        "extractable": false,
+        "name": "energy",
+        "stack_size": 1000
+      },
+      "sunlight": {
+        "extractable": true,
+        "name": "sunlight",
+        "stack_size": 1000
+      },
+      "water": {
+        "extractable": false,
+        "name": "water",
+        "stack_size": 1000
+      }
+    },
+    "x_max": 1000,
+    "y_max": 1000
+  },
+  "microbes": [
+  ],
+  "stats": {
+    "age": 1407,
+    "microbes_count": 10
+  }
+}
