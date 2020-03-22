@@ -213,20 +213,23 @@ namespace genesis_n {
     using resources_t   = std::unordered_map<std::string/*name*/, resource_info_json_t>;
     using areas_t       = std::vector<area_json_t>;
     using recipes_t     = std::unordered_map<std::string/*name*/, recipe_json_t>;
+    using xy_pos_t      = utils_t::xy_pos_t;
 
     uint64_t      x_max                       = 1000;
     uint64_t      y_max                       = 1000;
     uint64_t      code_size                   = 32;
     uint64_t      age_max                     = 10000;
     uint64_t      energy_remaining            = 10;
-    std::string   ip                          = "127.0.0.1";
-    uint64_t      port                        = 8000;
     uint64_t      interval_update_world_ms    = 100;
     uint64_t      interval_save_world_ms      = 60 * 1000;
     debug_t       debug                       = { utils_t::ERROR };
     resources_t   resources                   = {};
     areas_t       areas                       = {};
     recipes_t     recipes                     = {};
+    xy_pos_t      spawn_pos                   = {};
+    uint64_t      spawn_radius                = {};
+    uint64_t      spawn_min_count             = {};
+    uint64_t      spawn_max_count             = {};
   };
 
   struct stats_json_t {
@@ -268,6 +271,7 @@ namespace genesis_n {
     using resources_t   = std::unordered_map<std::string/*name*/, resource_info_json_t>;
     using areas_t       = std::unordered_multimap<std::string/*resource*/, area_json_t>;
     using recipes_t     = std::unordered_map<std::string/*name*/, recipe_json_t>;
+    using xy_pos_t      = utils_t::xy_pos_t;
 
     uint64_t      x_max;
     uint64_t      y_max;
@@ -275,14 +279,16 @@ namespace genesis_n {
     uint64_t      health_max;
     uint64_t      age_max;
     uint64_t      energy_remaining;
-    std::string   ip;
-    uint64_t      port;
     uint64_t      interval_update_world_ms;
     uint64_t      interval_save_world_ms;
     debug_t       debug;
     resources_t   resources;
     areas_t       areas;
     recipes_t     recipes;
+    xy_pos_t      spawn_pos;
+    uint64_t      spawn_radius;
+    uint64_t      spawn_min_count;
+    uint64_t      spawn_max_count;
 
     bool from_json(const config_json_t& config_json);
     bool to_json(config_json_t& config_json) const;
@@ -452,14 +458,16 @@ namespace genesis_n {
     JSON_SAVE2(json, config_json, code_size);
     JSON_SAVE2(json, config_json, age_max);
     JSON_SAVE2(json, config_json, energy_remaining);
-    JSON_SAVE2(json, config_json, ip);
-    JSON_SAVE2(json, config_json, port);
     JSON_SAVE2(json, config_json, interval_update_world_ms);
     JSON_SAVE2(json, config_json, interval_save_world_ms);
     JSON_SAVE2(json, config_json, debug);
     JSON_SAVE2(json, config_json, resources);
     JSON_SAVE2(json, config_json, areas);
     JSON_SAVE2(json, config_json, recipes);
+    JSON_SAVE2(json, config_json, spawn_pos);
+    JSON_SAVE2(json, config_json, spawn_radius);
+    JSON_SAVE2(json, config_json, spawn_min_count);
+    JSON_SAVE2(json, config_json, spawn_max_count);
   }
 
   inline void from_json(const nlohmann::json& json, config_json_t& config_json) {
@@ -469,14 +477,16 @@ namespace genesis_n {
     JSON_LOAD2(json, config_json, code_size);
     JSON_LOAD2(json, config_json, age_max);
     JSON_LOAD2(json, config_json, energy_remaining);
-    JSON_LOAD2(json, config_json, ip);
-    JSON_LOAD2(json, config_json, port);
     JSON_LOAD2(json, config_json, interval_update_world_ms);
     JSON_LOAD2(json, config_json, interval_save_world_ms);
     JSON_LOAD2(json, config_json, debug);
     JSON_LOAD2(json, config_json, resources);
     JSON_LOAD2(json, config_json, areas);
     JSON_LOAD2(json, config_json, recipes);
+    JSON_LOAD2(json, config_json, spawn_pos);
+    JSON_LOAD2(json, config_json, spawn_radius);
+    JSON_LOAD2(json, config_json, spawn_min_count);
+    JSON_LOAD2(json, config_json, spawn_max_count);
   }
 
   inline void to_json(nlohmann::json& json, const stats_json_t& stats_json) {
@@ -732,18 +742,6 @@ namespace genesis_n {
 
     energy_remaining = config_json.energy_remaining;
 
-    ip = config_json.ip;
-    if (ip.size() > 46) { // IPv6
-      LOG_GENESIS(ERROR, "invalid config_t::ip %s", ip.c_str());
-      return false;
-    }
-
-    port = config_json.port;
-    if (!port || port > 0xFFFF) {
-      LOG_GENESIS(ERROR, "invalid config_t::port %zd", port);
-      return false;
-    }
-
     interval_update_world_ms = config_json.interval_update_world_ms;
 
     interval_save_world_ms = config_json.interval_save_world_ms;
@@ -815,6 +813,26 @@ namespace genesis_n {
       }
     }
 
+    spawn_pos = config_json.spawn_pos;
+    if (spawn_pos.first >= x_max || spawn_pos.second >= y_max) {
+      LOG_GENESIS(ERROR, "invalid config_t::spawn_pos");
+      return false;
+    }
+
+    spawn_radius = config_json.spawn_radius;
+    if (spawn_radius < 5) {
+      LOG_GENESIS(ERROR, "invalid config_t::spawn_radius");
+      return false;
+    }
+
+    spawn_min_count = config_json.spawn_min_count;
+
+    spawn_max_count = config_json.spawn_max_count;
+    if (spawn_max_count <= spawn_min_count) {
+      LOG_GENESIS(ERROR, "invalid config_t::spawn_max_count");
+      return false;
+    }
+
     return true;
   }
 
@@ -826,8 +844,6 @@ namespace genesis_n {
     config_json.code_size                  = code_size;
     config_json.age_max                    = age_max;
     config_json.energy_remaining           = energy_remaining;
-    config_json.ip                         = ip;
-    config_json.port                       = port;
     config_json.interval_update_world_ms   = interval_update_world_ms;
     config_json.interval_save_world_ms     = interval_save_world_ms;
     config_json.debug                      = debug;
@@ -837,6 +853,10 @@ namespace genesis_n {
       config_json.areas.push_back(area);
     }
     config_json.recipes                    = recipes;
+    config_json.spawn_pos                  = spawn_pos;
+    config_json.spawn_radius               = spawn_radius;
+    config_json.spawn_min_count            = spawn_min_count;
+    config_json.spawn_max_count            = spawn_max_count;
 
     return true;
   }
@@ -944,15 +964,17 @@ namespace genesis_n {
             || microbe.age > ctx.config.age_max; });
 
     {
-      uint16_t count_need = 10; // * 0.5 * (ctx.config.x_max + ctx.config.y_max);
-      uint16_t count_min  = 0; // ;0.1 * count_need;
-      if (ctx.microbes.size() <= count_min) {
-        while (ctx.microbes.size() < count_need) {
+      if (ctx.microbes.size() <= ctx.config.spawn_min_count) {
+        while (ctx.microbes.size() < ctx.config.spawn_max_count) {
           microbe_t microbe;
           microbe.init(ctx.config);
-          utils_t::xy_pos_t pos = microbe.pos;
-          if (microbe.validation(ctx.config) && !ctx.microbes.contains(pos)) {
-            ctx.microbes[pos] = std::move(microbe);
+          microbe.pos = ctx.config.spawn_pos;
+          microbe.pos.first  += 2 * utils_t::rand_u64() % ctx.config.spawn_radius - ctx.config.spawn_radius;
+          microbe.pos.second += 2 * utils_t::rand_u64() % ctx.config.spawn_radius - ctx.config.spawn_radius;
+          if (microbe.validation(ctx.config) && !ctx.microbes.contains(microbe.pos)) {
+            ctx.microbes[microbe.pos] = std::move(microbe);
+          } else {
+            break;
           }
         }
       }

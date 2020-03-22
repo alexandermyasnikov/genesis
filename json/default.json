@@ -45,7 +45,7 @@
     ],
     "energy_remaining": 5,
     "interval_save_world_ms": 60000,
-    "interval_update_world_ms": 100,
+    "interval_update_world_ms": 10,
     "recipes": {
       "sunlight_to_energy": {
         "in": {
@@ -80,13 +80,20 @@
         "stack_size": 1000
       }
     },
+    "spawn_max_count": 50,
+    "spawn_min_count": 30,
+    "spawn_pos": [
+      700,
+      400
+    ],
+    "spawn_radius": 20,
     "x_max": 1000,
     "y_max": 1000
   },
   "microbes": [
   ],
   "stats": {
-    "age": 1407,
-    "microbes_count": 10
+    "age": 0,
+    "microbes_count": 0
   }
 }
