@@ -40,6 +40,7 @@ int main(int argc, char* argv[]) {
 
   std::list<utils_t::xy_pos_t> microbes;
   std::list<area_pos_t> areas;
+  std::string stats_text = {};
 
   microbes = {};
   for (const auto& [key, _] : world.ctx.microbes) {
@@ -59,12 +60,23 @@ int main(int argc, char* argv[]) {
     }
   });
 
-  sf::RenderWindow window(sf::VideoMode(800, 800), "Genesis", sf::Style::Close | sf::Style::Resize);
+  const float size_x = 500;
+  const float size_y = 500;
+
+  sf::RenderWindow window(sf::VideoMode(size_x, size_y), "Genesis", sf::Style::Close | sf::Style::Resize);
   window.setFramerateLimit(60);
 
-  const auto& config = world.ctx.config;
+  // const auto& config = world.ctx.config;
 
-  sf::View view(sf::FloatRect(0, 0, 800, 800));
+  sf::View view_world;
+  sf::View view_text;
+
+  sf::Font font;
+  std::string font_path = "./resources/fonts/Roboto-Regular.ttf";
+  if (!font.loadFromFile(font_path)) {
+    std::cerr << "ERROR: can not load font" << std::endl;
+    return -1;
+  }
 
   while (window.isOpen()) {
     sf::Event event;
@@ -77,7 +89,12 @@ int main(int argc, char* argv[]) {
 
         } case sf::Event::Resized: {
           double aspect_ratio = double(window.getSize().x) / window.getSize().y;
-          view.setSize(config.x_max * aspect_ratio, config.x_max);
+
+          view_world.setCenter(window.getSize().x/2, window.getSize().y/2);
+          view_world.setSize(window.getSize().x, window.getSize().x / aspect_ratio);
+
+          view_text.setCenter(window.getSize().x/2, window.getSize().y/2);
+          view_text.setSize(window.getSize().x, window.getSize().x / aspect_ratio);
           break;
         }
         default: break;
@@ -90,32 +107,32 @@ int main(int argc, char* argv[]) {
       }
 
       if (sf::Keyboard::isKeyPressed(sf::Keyboard::Add)) {
-        view.zoom(0.9);
+        view_world.zoom(0.9);
       }
 
       if (sf::Keyboard::isKeyPressed(sf::Keyboard::Subtract)) {
-        view.zoom(1.1);
+        view_world.zoom(1.1);
       }
 
       if (sf::Keyboard::isKeyPressed(sf::Keyboard::Left)) {
-        view.move(-10, 0);
+        view_world.move(-10, 0);
       }
 
       if (sf::Keyboard::isKeyPressed(sf::Keyboard::Right)) {
-        view.move(10, 0);
+        view_world.move(10, 0);
       }
 
       if (sf::Keyboard::isKeyPressed(sf::Keyboard::Up)) {
-        view.move(0, -10);
+        view_world.move(0, -10);
       }
 
       if (sf::Keyboard::isKeyPressed(sf::Keyboard::Down)) {
-        view.move(0, 10);
+        view_world.move(0, 10);
       }
     }
 
     if (mutex_world.try_lock_for(std::chrono::milliseconds(1))) {
-      std::cout << "try_lock ok" << std::endl;
+      // std::cout << "try_lock ok" << std::endl;
 
       areas = {};
       for (const auto& [_, area] : world.ctx.config.areas) {
@@ -127,13 +144,19 @@ int main(int argc, char* argv[]) {
         microbes.push_back(key);
       }
 
+      const auto& stats = world.ctx.stats;
+      stats_text = std::string{} + "stats:"
+        + "\n\tage: " + std::to_string(stats.age)
+        + "\n\tmicrobes_count: " + std::to_string(stats.microbes_count)
+        + "";
+
       mutex_world.unlock();
     } else {
       // std::cout << "try_lock failed" << std::endl;
     }
 
     window.clear(sf::Color(240, 240, 240));
-    window.setView(view);
+    window.setView(view_world);
 
     {
       sf::RectangleShape rectangle;
@@ -141,6 +164,19 @@ int main(int argc, char* argv[]) {
       rectangle.setPosition(sf::Vector2f(0, 0));
       rectangle.setFillColor(sf::Color(200, 200, 200));
       window.draw(rectangle);
+    }
+
+    {
+      window.setView(view_text);
+
+      sf::Text text;
+      text.setFont(font);
+      text.setString(stats_text);
+      text.setCharacterSize(24);
+      text.setFillColor(sf::Color::Black);
+      window.draw(text);
+
+      window.setView(view_world);
     }
 
     for (const auto& [pos, r] : areas) {
