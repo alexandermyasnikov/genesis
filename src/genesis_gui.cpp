@@ -60,13 +60,13 @@ int main(int argc, char* argv[]) {
     }
   });
 
-  const float size_x = 500;
-  const float size_y = 500;
+  const auto& config = world.ctx.config;
+
+  const float size_x = config.x_max;
+  const float size_y = config.y_max;
 
   sf::RenderWindow window(sf::VideoMode(size_x, size_y), "Genesis", sf::Style::Close | sf::Style::Resize);
   window.setFramerateLimit(60);
-
-  // const auto& config = world.ctx.config;
 
   sf::View view_world;
   sf::View view_text;
@@ -166,19 +166,6 @@ int main(int argc, char* argv[]) {
       window.draw(rectangle);
     }
 
-    {
-      window.setView(view_text);
-
-      sf::Text text;
-      text.setFont(font);
-      text.setString(stats_text);
-      text.setCharacterSize(24);
-      text.setFillColor(sf::Color::Black);
-      window.draw(text);
-
-      window.setView(view_world);
-    }
-
     for (const auto& [pos, r] : areas) {
       sf::CircleShape circle;
       circle.setRadius(r);
@@ -195,6 +182,19 @@ int main(int argc, char* argv[]) {
       rectangle.setPosition(sf::Vector2f(x, y));
       rectangle.setFillColor(sf::Color(0, 0, 255));
       window.draw(rectangle);
+    }
+
+    {
+      window.setView(view_text);
+
+      sf::Text text;
+      text.setFont(font);
+      text.setString(stats_text);
+      text.setCharacterSize(24);
+      text.setFillColor(sf::Color::Black);
+      window.draw(text);
+
+      window.setView(view_world);
     }
 
     window.display();
