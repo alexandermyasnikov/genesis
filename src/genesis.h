@@ -101,7 +101,7 @@ namespace genesis_n {
     inline static uint64_t CODE_HASH1          = 2;
     inline static uint64_t CODE_SIZE_MIN       = 10;
 
-    inline static size_t seed = time(0);
+    inline static size_t seed = {};
 
     inline static std::set<std::string> debug =
 #if PRODUCTION
@@ -222,6 +222,7 @@ namespace genesis_n {
     uint64_t      energy_remaining            = 10;
     uint64_t      interval_update_world_ms    = 100;
     uint64_t      interval_save_world_ms      = 60 * 1000;
+    uint64_t      seed                        = {};
     debug_t       debug                       = { utils_t::ERROR };
     resources_t   resources                   = {};
     areas_t       areas                       = {};
@@ -281,6 +282,7 @@ namespace genesis_n {
     uint64_t      energy_remaining;
     uint64_t      interval_update_world_ms;
     uint64_t      interval_save_world_ms;
+    uint64_t      seed;
     debug_t       debug;
     resources_t   resources;
     areas_t       areas;
@@ -460,6 +462,7 @@ namespace genesis_n {
     JSON_SAVE2(json, config_json, energy_remaining);
     JSON_SAVE2(json, config_json, interval_update_world_ms);
     JSON_SAVE2(json, config_json, interval_save_world_ms);
+    JSON_SAVE2(json, config_json, seed);
     JSON_SAVE2(json, config_json, debug);
     JSON_SAVE2(json, config_json, resources);
     JSON_SAVE2(json, config_json, areas);
@@ -479,6 +482,7 @@ namespace genesis_n {
     JSON_LOAD2(json, config_json, energy_remaining);
     JSON_LOAD2(json, config_json, interval_update_world_ms);
     JSON_LOAD2(json, config_json, interval_save_world_ms);
+    JSON_LOAD2(json, config_json, seed);
     JSON_LOAD2(json, config_json, debug);
     JSON_LOAD2(json, config_json, resources);
     JSON_LOAD2(json, config_json, areas);
@@ -746,6 +750,8 @@ namespace genesis_n {
 
     interval_save_world_ms = config_json.interval_save_world_ms;
 
+    seed = config_json.seed;
+
     debug = config_json.debug;
     if (debug.size() > 100) {
       LOG_GENESIS(ERROR, "invalid config_t::debug %zd", debug.size());
@@ -846,6 +852,7 @@ namespace genesis_n {
     config_json.energy_remaining           = energy_remaining;
     config_json.interval_update_world_ms   = interval_update_world_ms;
     config_json.interval_save_world_ms     = interval_save_world_ms;
+    config_json.seed                       = seed;
     config_json.debug                      = debug;
     config_json.resources                  = resources;
     config_json.areas                      = {};
@@ -972,7 +979,7 @@ namespace genesis_n {
           microbe.pos.first  += 2 * utils_t::rand_u64() % ctx.config.spawn_radius - ctx.config.spawn_radius;
           microbe.pos.second += 2 * utils_t::rand_u64() % ctx.config.spawn_radius - ctx.config.spawn_radius;
           if (microbe.validation(ctx.config) && !ctx.microbes.contains(microbe.pos)) {
-            ctx.microbes[microbe.pos] = std::move(microbe);
+            ctx.microbes.insert({microbe.pos, microbe});
           } else {
             break;
           }
@@ -1175,15 +1182,20 @@ namespace genesis_n {
         uint64_t direction = opnd1 % utils_t::direction_max;
         double probability = 0.1 * opnd2 / 0xFFFF / code.size();
 
+        LOG_GENESIS(MIND, "energy %zd", microbe.resources.at(utils_t::ENERGY).count);
         utils_t::xy_pos_t pos_n = pos_next(microbe.pos, direction);
-        if (microbe.resources.at(utils_t::ENERGY).count > 600 && !ctx.microbes.contains(pos_n)) {
+        if (microbe.resources.at(utils_t::ENERGY).count
+            > 0.6 * ctx.config.resources.at(utils_t::ENERGY).stack_size
+            && !ctx.microbes.contains(pos_n))
+        {
+          LOG_GENESIS(MIND, "energy ok");
           for (auto [_, resource]  : microbe.resources) {
             resource.count /= 2;
           }
           auto microbe_child = microbe;
           microbe_child.pos = pos_n;
           for (auto& byte : microbe_child.code) {
-            if (utils_t::rand_u64() % 0xFFFF > probability) {
+            if (utils_t::rand_u64() % 0xFFFF < probability) {
               byte = utils_t::rand_u64();
             }
           }
@@ -1240,6 +1252,8 @@ namespace genesis_n {
 
             resources[recipe_item.name].count = std::min(resource_info.stack_size,
                 resources[recipe_item.name].count + count);
+
+            LOG_GENESIS(MIND, "resource %zd", resources[recipe_item.name].count);
           }
         }();
 
@@ -1255,6 +1269,7 @@ namespace genesis_n {
   void world_t::init() {
     TRACE_GENESIS;
     load();
+    utils_t::seed = ctx.config.seed ? ctx.config.seed : time(0);
     utils_t::debug = ctx.config.debug;
     save();
   }
