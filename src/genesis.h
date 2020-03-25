@@ -20,7 +20,8 @@
 
 
 
-#define PRODUCTION 0
+#define PRODUCTION 1
+#define VALGRIND 1
 
 #define JSON_SAVE(json, name)   json[#name] = name
 #define JSON_LOAD(json, name)   name = json.value(#name, name)
@@ -28,7 +29,7 @@
 #define JSON_SAVE2(json, s, name)   json[#name] = s.name
 #define JSON_LOAD2(json, s, name)   s.name = json.value(#name, s.name)
 
-#define SAFE_INDEX(cont, ind)   cont.at((ind) % cont.size())
+#define SAFE_INDEX(cont, ind)   cont[(ind) % cont.size()]
 
 #if PRODUCTION
   #define TRACE_GENESIS
@@ -118,8 +119,8 @@ namespace genesis_n {
     static bool load(nlohmann::json& json, const std::string& name);
     static bool save(const nlohmann::json& json, const std::string& name);
     static uint64_t rand_u64();
-    static uint64_t hash_mix(uint64_t h);
-    static uint64_t fasthash64(const void *buf, size_t len, uint64_t seed);
+    static uint64_t inline hash_mix(uint64_t h);
+    static uint64_t inline fasthash64(const void *buf, size_t len, uint64_t seed);
 
     static uint64_t distance(const xy_pos_t& pos1, const xy_pos_t& pos2) {
       auto [x1, y1] = pos1;
@@ -130,23 +131,23 @@ namespace genesis_n {
     }
 
     static uint64_t safe_index(const std::vector<uint8_t>& data, uint64_t index) {
-      return data.at(index % data.size());
+      return data[index % data.size()];
     }
 
     template <typename type_t>
-    static void load_by_hash(const std::vector<uint8_t>& data, uint64_t index, uint64_t& value) {
+    static void inline load_by_hash(const std::vector<uint8_t>& data, uint64_t index, uint64_t& value) {
       TRACE_GENESIS;
       value = {};
       for (size_t i{}; i < sizeof(type_t); ++i) {
-        value += data.at(hash_mix(index + i) % data.size()) << 8 * i;
+        value += data[hash_mix(index + i) % data.size()] << 8 * i;
       }
     }
 
     template <typename type_t>
-    static void save_by_hash(std::vector<uint8_t>& data, uint64_t index, uint64_t value) {
+    static void inline save_by_hash(std::vector<uint8_t>& data, uint64_t index, uint64_t value) {
       TRACE_GENESIS;
       for (size_t i{}; i < sizeof(type_t); ++i) {
-        data.at(hash_mix(index + i) % data.size()) = (value >> 8 * i) & 0xFF;
+        data[hash_mix(index + i) % data.size()] = (value >> 8 * i) & 0xFF;
       }
     }
   };
@@ -206,6 +207,7 @@ namespace genesis_n {
     uint64_t      age;
     uint64_t      direction;
     int64_t       energy_remaining;
+    bool          alive;
   };
 
   struct config_json_t {
@@ -239,7 +241,7 @@ namespace genesis_n {
   };
 
   struct context_json_t {
-    using microbes_t = std::unordered_map<utils_t::xy_pos_t, microbe_json_t, utils_t::xy_pos_hash_t>;
+    using microbes_t = std::vector<microbe_json_t>;
 
     config_json_t   config        = {};
     microbes_t      microbes      = {};
@@ -260,6 +262,7 @@ namespace genesis_n {
     uint64_t      age;
     uint64_t      direction;
     int64_t       energy_remaining;
+    bool          alive                = false;
 
     bool from_json(const microbe_json_t& microbe_json);
     bool to_json(microbe_json_t& microbe_json) const;
@@ -297,7 +300,7 @@ namespace genesis_n {
   };
 
   struct context_t {
-    using microbes_t = std::unordered_map<utils_t::xy_pos_t, microbe_t, utils_t::xy_pos_hash_t>;
+    using microbes_t = std::vector<microbe_t>;
 
     config_t        config        = {};
     microbes_t      microbes      = {};
@@ -308,8 +311,6 @@ namespace genesis_n {
   };
 
   struct world_t {
-    // using microbes_t = std::unordered_map<utils_t::xy_pos_t, microbe_t, utils_t::xy_pos_hash_t>;
-
     context_t          ctx              = {};
     std::string        file_name        = {};
 
@@ -323,6 +324,16 @@ namespace genesis_n {
     void init();
     void load();
     void save();
+
+    uint64_t xy_pos_to_ind(const utils_t::xy_pos_t& pos) {
+      TRACE_GENESIS;
+      return pos.first + ctx.config.x_max * pos.second;
+    }
+
+    utils_t::xy_pos_t xy_pos_from_ind(uint64_t ind) {
+      TRACE_GENESIS;
+      return {ind % ctx.config.x_max, ind / ctx.config.x_max};
+    }
 
     bool pos_valid(const utils_t::xy_pos_t& pos) const {
       TRACE_GENESIS;
@@ -440,6 +451,7 @@ namespace genesis_n {
     JSON_SAVE2(json, microbe_json, age);
     JSON_SAVE2(json, microbe_json, direction);
     JSON_SAVE2(json, microbe_json, energy_remaining);
+    JSON_SAVE2(json, microbe_json, alive);
   }
 
   inline void from_json(const nlohmann::json& json, microbe_json_t& microbe_json) {
@@ -451,6 +463,7 @@ namespace genesis_n {
     JSON_LOAD2(json, microbe_json, age);
     JSON_LOAD2(json, microbe_json, direction);
     JSON_LOAD2(json, microbe_json, energy_remaining);
+    JSON_LOAD2(json, microbe_json, alive);
   }
 
   inline void to_json(nlohmann::json& json, const config_json_t& config_json) {
@@ -648,6 +661,7 @@ namespace genesis_n {
     age                = microbe_json.age;
     direction          = microbe_json.direction;
     energy_remaining   = microbe_json.energy_remaining;
+    alive              = microbe_json.alive;
 
     return true;
   }
@@ -662,6 +676,7 @@ namespace genesis_n {
     microbe_json.age                = age;
     microbe_json.direction          = direction;
     microbe_json.energy_remaining   = energy_remaining;
+    microbe_json.alive              = alive;
 
     return true;
   }
@@ -702,6 +717,8 @@ namespace genesis_n {
 
     direction %= utils_t::direction_max;
 
+    // alive
+
     return true;
   }
 
@@ -715,6 +732,7 @@ namespace genesis_n {
     age                = {};
     direction          = utils_t::rand_u64() % utils_t::direction_max;
     energy_remaining   = {};
+    alive              = true;
 
     resources[utils_t::ENERGY] = {utils_t::ENERGY, config.resources.at(utils_t::ENERGY).stack_size / 2 };
   }
@@ -878,12 +896,14 @@ namespace genesis_n {
       return false;
     }
 
-    microbes = {};
-    for (const auto& [_, microbe_json] : context_json.microbes) {
-      microbe_t microbe;
-      microbe.from_json(microbe_json);
+    microbes.assign(config.x_max * config.y_max, {});
+    for (size_t i{}; i < std::min(microbes.size(), context_json.microbes.size()); ++i) {
+      auto& microbe = microbes[i];
+      microbe.from_json(context_json.microbes[i]);
       if (microbe.validation(config)) {
-        microbes.insert({microbe.pos, microbe});
+        ;
+      } else {
+        microbe = {};
       }
     }
 
@@ -900,11 +920,9 @@ namespace genesis_n {
       return false;
     }
 
-    context_json.microbes = {};
-    for (const auto& [key, microbe] : microbes) {
-      microbe_json_t microbe_json;
-      microbe.to_json(microbe_json);
-      context_json.microbes[key] = microbe_json;
+    context_json.microbes.assign(microbes.size(), {});
+    for (size_t i{}; i < microbes.size(); ++i) {
+      microbes[i].to_json(context_json.microbes[i]);
     }
 
     context_json.stats = stats;
@@ -940,22 +958,27 @@ namespace genesis_n {
   void world_t::update_ctx() {
     TRACE_GENESIS;
 
-    for (auto& [_, microbe] : ctx.microbes) {
+    ctx.stats.microbes_count = {};
+
+    for (auto& microbe : ctx.microbes) {
       microbe.energy_remaining += ctx.config.energy_remaining;
     }
 
-    for (auto& [pos, microbe] : ctx.microbes) {
-      // if (microbe.alive()) {
-      //   continue;
-      // }
+    for (size_t ind{}; ind < ctx.microbes.size(); ind++) {
+      auto& microbe = ctx.microbes[ind];
+
+      if (!microbe.alive) {
+        continue;
+      }
 
       while (microbe.energy_remaining > 0) {
         microbe.energy_remaining--;
         update_mind(microbe);
-        if (pos != microbe.pos) {
-          auto nh = ctx.microbes.extract(pos);
-          nh.key() = microbe.pos;
-          ctx.microbes.insert(move(nh));
+        uint64_t ind_n = xy_pos_to_ind(microbe.pos);
+        if (ind_n != ind) {
+          auto& microbe_n = ctx.microbes[ind_n];
+          std::swap(microbe, microbe_n);
+          break; // XXX
         }
       }
 
@@ -963,23 +986,22 @@ namespace genesis_n {
       auto& count = microbe.resources[utils_t::ENERGY].count;
       if (count)
         count--;
+
+      ctx.stats.microbes_count++;
     }
 
-    std::erase_if(ctx.microbes, [this](auto& kv) {
-        auto& microbe = kv.second;
-        return microbe.resources[utils_t::ENERGY].count <= 0
-            || microbe.age > ctx.config.age_max; });
-
     {
-      if (ctx.microbes.size() <= ctx.config.spawn_min_count) {
-        while (ctx.microbes.size() < ctx.config.spawn_max_count) {
+      size_t count = ctx.stats.microbes_count;
+      if (count <= ctx.config.spawn_min_count) {
+        while (count < ctx.config.spawn_max_count) {
           microbe_t microbe;
           microbe.init(ctx.config);
           microbe.pos = ctx.config.spawn_pos;
           microbe.pos.first  += 2 * utils_t::rand_u64() % ctx.config.spawn_radius - ctx.config.spawn_radius;
           microbe.pos.second += 2 * utils_t::rand_u64() % ctx.config.spawn_radius - ctx.config.spawn_radius;
-          if (microbe.validation(ctx.config) && !ctx.microbes.contains(microbe.pos)) {
-            ctx.microbes.insert({microbe.pos, microbe});
+          uint64_t ind = xy_pos_to_ind(microbe.pos);
+          if (microbe.validation(ctx.config) && !ctx.microbes[ind].alive) {
+            ctx.microbes[ind] = std::move(microbe);
           } else {
             break;
           }
@@ -990,7 +1012,6 @@ namespace genesis_n {
     // stats
     {
       ctx.stats.age++;
-      ctx.stats.microbes_count = ctx.microbes.size();
     }
   }
 
@@ -998,12 +1019,12 @@ namespace genesis_n {
     TRACE_GENESIS;
 
     auto& code = microbe.code;
-    uint8_t seed = code.at(utils_t::CODE_SEED);
+    uint8_t seed = code[utils_t::CODE_SEED];
 
     utils_t::hash_data_t hd = {
       0,   // rip
-      code.at(utils_t::CODE_HASH0),
-      code.at(utils_t::CODE_HASH1),
+      code[utils_t::CODE_HASH0],
+      code[utils_t::CODE_HASH1],
       0,   // cmd
       0,   // arg
       0,   // reserved
@@ -1067,7 +1088,7 @@ namespace genesis_n {
 
         LOG_GENESIS(MIND, "SET_U8 <%d> <%d>", opnd1, opnd2);
 
-        code.at(opnd1 % code.size()) = opnd2;
+        code[opnd1 % code.size()] = opnd2;
         break;
 
       } case 4: {
@@ -1083,7 +1104,7 @@ namespace genesis_n {
 
         LOG_GENESIS(MIND, "SET_U8 <%d> <%d>", opnd1, opnd2);
 
-        code.at(opnd1 % code.size()) = code.at(opnd2 % code.size());
+        code[opnd1 % code.size()] = code[opnd2 % code.size()];
         break;
 
       } case 5: {
@@ -1104,7 +1125,7 @@ namespace genesis_n {
 
         LOG_GENESIS(MIND, "ADD <%d> <%d> <%d>", opnd1, opnd2, opnd3);
 
-        code.at(opnd1 % code.size()) = code.at(opnd2 % code.size()) + code.at(opnd3 % code.size());
+        code[opnd1 % code.size()] = code[opnd2 % code.size()] + code[opnd3 % code.size()];
         break;
 
       } case 6: {
@@ -1125,7 +1146,7 @@ namespace genesis_n {
 
         LOG_GENESIS(MIND, "SUB <%d> <%d> <%d>", opnd1, opnd2, opnd3);
 
-        code.at(opnd1 % code.size()) = code.at(opnd2 % code.size()) - code.at(opnd3 % code.size());
+        code[opnd1 % code.size()] = code[opnd2 % code.size()] - code[opnd3 % code.size()];
         break;
 
         // MULT
@@ -1158,9 +1179,10 @@ namespace genesis_n {
       } case 18: {
         LOG_GENESIS(MIND, "MOVE");
 
-        utils_t::xy_pos_t pos = microbe.pos;
-        utils_t::xy_pos_t pos_n = pos_next(pos, microbe.direction);
-        if (pos != pos_n && !ctx.microbes.contains(pos_n)) {
+        auto pos = microbe.pos;
+        auto pos_n = pos_next(pos, microbe.direction);
+        uint64_t ind = xy_pos_to_ind(pos_n);
+        if (pos != pos_n && !ctx.microbes[ind].alive) {
           microbe.pos = pos_n;
         }
 
@@ -1183,10 +1205,11 @@ namespace genesis_n {
         double probability = 0.1 * opnd2 / 0xFFFF / code.size();
 
         LOG_GENESIS(MIND, "energy %zd", microbe.resources.at(utils_t::ENERGY).count);
-        utils_t::xy_pos_t pos_n = pos_next(microbe.pos, direction);
+        auto pos_n = pos_next(microbe.pos, direction);
+        uint64_t ind = xy_pos_to_ind(pos_n);
         if (microbe.resources.at(utils_t::ENERGY).count
             > 0.6 * ctx.config.resources.at(utils_t::ENERGY).stack_size
-            && !ctx.microbes.contains(pos_n))
+            && !ctx.microbes[ind].alive)
         {
           LOG_GENESIS(MIND, "energy ok");
           for (auto [_, resource]  : microbe.resources) {
@@ -1200,7 +1223,7 @@ namespace genesis_n {
             }
           }
           if (microbe_child.validation(ctx.config)) {
-            ctx.microbes.insert({microbe_child.pos, microbe_child});
+            ctx.microbes[ind] = std::move(microbe_child);
           }
         }
         break;
@@ -1293,6 +1316,7 @@ namespace genesis_n {
   void world_t::save() {
     TRACE_GENESIS;
 
+#if !VALGRIND
     context_json_t ctx_json;
     if (!ctx.to_json(ctx_json)) {
       LOG_GENESIS(ERROR, "invalid context");
@@ -1302,6 +1326,7 @@ namespace genesis_n {
     nlohmann::json json = ctx_json;
 
     utils_t::save(json, file_name);
+#endif
   }
 
   ////////////////////////////////////////////////////////////////////////////////

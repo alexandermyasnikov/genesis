@@ -43,8 +43,8 @@ int main(int argc, char* argv[]) {
   std::string stats_text = {};
 
   microbes = {};
-  for (const auto& [key, _] : world.ctx.microbes) {
-    microbes.push_back(key);
+  for (const auto& microbe : world.ctx.microbes) {
+    microbes.push_back(microbe.pos);
   }
 
   areas = {};
@@ -140,8 +140,8 @@ int main(int argc, char* argv[]) {
       }
 
       microbes = {};
-      for (const auto& [key, _] : world.ctx.microbes) {
-        microbes.push_back(key);
+      for (const auto& microbe : world.ctx.microbes) {
+        microbes.push_back(microbe.pos);
       }
 
       const auto& stats = world.ctx.stats;
