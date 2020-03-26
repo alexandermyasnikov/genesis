@@ -1,9 +1,13 @@
 
-all:
+all: console gui
+
+gui:
 	g++ -std=c++2a -o genesis src/genesis_gui.cpp \
 		-lsfml-graphics -lsfml-window -lsfml-system \
 		-lpthread \
-		-O2 -Wall -Wextra -Werror -pedantic
+		-fconcepts -O2 -Wall -Wextra -Werror -pedantic
+
+console:
 	g++ -std=c++2a -o genesis_console src/genesis_console.cpp \
-		-O2 -Wall -Wextra -Werror -pedantic
+		-fconcepts -O2 -Wall -Wextra -Werror -pedantic
 

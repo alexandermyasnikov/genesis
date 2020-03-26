@@ -44,7 +44,9 @@ int main(int argc, char* argv[]) {
 
   microbes = {};
   for (const auto& microbe : world.ctx.microbes) {
-    microbes.push_back(microbe.pos);
+    if (microbe.alive) {
+      microbes.push_back(microbe.pos);
+    }
   }
 
   areas = {};
@@ -131,7 +133,7 @@ int main(int argc, char* argv[]) {
       }
     }
 
-    if (mutex_world.try_lock_for(std::chrono::milliseconds(1))) {
+    if (mutex_world.try_lock_for(std::chrono::milliseconds(100))) {
       // std::cout << "try_lock ok" << std::endl;
 
       areas = {};
@@ -141,7 +143,9 @@ int main(int argc, char* argv[]) {
 
       microbes = {};
       for (const auto& microbe : world.ctx.microbes) {
-        microbes.push_back(microbe.pos);
+        if (microbe.alive) {
+          microbes.push_back(microbe.pos);
+        }
       }
 
       const auto& stats = world.ctx.stats;
