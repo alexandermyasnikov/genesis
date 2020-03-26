@@ -97,9 +97,8 @@ namespace genesis_n {
     inline static std::string ENERGY           = "energy";
     inline static uint64_t npos                = std::string::npos;
     inline static uint64_t direction_max       = 9;
-    inline static uint64_t CODE_SEED           = 0;
-    inline static uint64_t CODE_HASH0          = 1;
-    inline static uint64_t CODE_HASH1          = 2;
+    inline static uint64_t CODE_RIP2B          = 0;
+    inline static uint64_t CODE_SEED           = 2;
     inline static uint64_t CODE_SIZE_MIN       = 10;
 
     inline static size_t seed = {};
@@ -119,8 +118,8 @@ namespace genesis_n {
     static bool load(nlohmann::json& json, const std::string& name);
     static bool save(const nlohmann::json& json, const std::string& name);
     static uint64_t rand_u64();
-    static uint64_t inline hash_mix(uint64_t h);
-    static uint64_t inline fasthash64(const void *buf, size_t len, uint64_t seed);
+    static inline uint64_t hash_mix(uint64_t h);
+    static inline uint64_t fasthash64(const void *buf, size_t len, uint64_t seed);
 
     static uint64_t distance(const xy_pos_t& pos1, const xy_pos_t& pos2) {
       auto [x1, y1] = pos1;
@@ -130,25 +129,18 @@ namespace genesis_n {
       return std::hypot(dx, dy);
     }
 
-    static uint64_t safe_index(const std::vector<uint8_t>& data, uint64_t index) {
-      return data[index % data.size()];
+    static inline void load_by_hash(auto& value, const std::vector<uint8_t>& data, uint64_t index) {
+      TRACE_GENESIS;
+      auto dst = reinterpret_cast<void*>(&value);
+      auto src = reinterpret_cast<const void*>(data.data() + (index % (data.size() - sizeof(value))));
+      std::memcpy(dst, src, sizeof(value));
     }
 
-    template <typename type_t>
-    static void inline load_by_hash(const std::vector<uint8_t>& data, uint64_t index, uint64_t& value) {
+    static inline void save_by_hash(auto value, std::vector<uint8_t>& data, uint64_t index) {
       TRACE_GENESIS;
-      value = {};
-      for (size_t i{}; i < sizeof(type_t); ++i) {
-        value += data[hash_mix(index + i) % data.size()] << 8 * i;
-      }
-    }
-
-    template <typename type_t>
-    static void inline save_by_hash(std::vector<uint8_t>& data, uint64_t index, uint64_t value) {
-      TRACE_GENESIS;
-      for (size_t i{}; i < sizeof(type_t); ++i) {
-        data[hash_mix(index + i) % data.size()] = (value >> 8 * i) & 0xFF;
-      }
+      auto dst = reinterpret_cast<void*>(data.data() + (index % (data.size() - sizeof(value))));
+      auto src = reinterpret_cast<const void*>(&value);
+      std::memcpy(dst, src, sizeof(value));
     }
   };
 
@@ -200,7 +192,8 @@ namespace genesis_n {
     using code_t        = std::vector<uint8_t>;
     using xy_pos_t      = utils_t::xy_pos_t;
 
-    std::string   family;
+    std::string   family; // TODO to uint64_t
+    // uint64_t   id;     // TODO
     code_t        code;
     resources_t   resources;
     xy_pos_t      pos;
@@ -1018,135 +1011,102 @@ namespace genesis_n {
   void world_t::update_mind(microbe_t& microbe) {
     TRACE_GENESIS;
 
+    LOG_GENESIS(MIND, "family: %s", microbe.family.c_str());
+
     auto& code = microbe.code;
-    uint8_t seed = code[utils_t::CODE_SEED];
 
-    utils_t::hash_data_t hd = {
-      0,   // rip
-      code[utils_t::CODE_HASH0],
-      code[utils_t::CODE_HASH1],
-      0,   // cmd
-      0,   // arg
-      0,   // reserved
-    };
+    uint8_t seed;
+    utils_t::load_by_hash(seed, code, utils_t::CODE_SEED);
 
-    uint64_t rip_addr = utils_t::fasthash64(&hd, sizeof(hd), seed);
-    uint64_t rip = {};
-    utils_t::load_by_hash<uint16_t>(code, rip_addr, rip);
-    rip++;
-    rip %= code.size();
-    utils_t::save_by_hash<uint16_t>(code, rip_addr, rip);
-    LOG_GENESIS(MIND, "rip: %zd", rip);
+    uint16_t rip;
+    utils_t::load_by_hash(rip, code, utils_t::CODE_RIP2B);
+    LOG_GENESIS(MIND, "rip: %d", rip);
 
-    hd.rip = rip;
-    hd.arg++;
+    uint8_t cmd;
+    utils_t::load_by_hash(cmd, code, rip++);
+    LOG_GENESIS(MIND, "cmd: %d", cmd);
 
-    uint64_t cmd_addr = utils_t::fasthash64(&hd, sizeof(hd), seed);
-    uint64_t cmd = {};
-    utils_t::load_by_hash<uint8_t>(code, cmd_addr, cmd);
-    LOG_GENESIS(MIND, "cmd: %zd", cmd);
+    uint8_t args;
+    utils_t::load_by_hash(args, code, rip++);
+    LOG_GENESIS(MIND, "args: %d", args);
 
-    switch (cmd % 32) {
+    switch (cmd) {
       case 0: {
         LOG_GENESIS(MIND, "NOP");
         break;
 
       } case 1: {
-        hd.arg++;
-        uint64_t opnd1 = {};
-        uint64_t opnd1_addr = utils_t::fasthash64(&hd, sizeof(hd), seed);
-        utils_t::load_by_hash<uint16_t>(code, opnd1_addr, opnd1);
+        uint16_t opnd_offset;
+        utils_t::load_by_hash(opnd_offset, code, utils_t::hash_mix((seed ^ args) + 0));
 
-        LOG_GENESIS(MIND, "BR <%d>", opnd1);
+        LOG_GENESIS(MIND, "BR <%d>", opnd_offset);
 
-        rip += opnd1;
-        utils_t::save_by_hash<uint16_t>(code, rip_addr, rip);
+        rip += opnd_offset;
         break;
 
       } case 2: {
-        hd.arg++;
-        uint64_t opnd1 = {};
-        uint64_t opnd1_addr = utils_t::fasthash64(&hd, sizeof(hd), seed);
-        utils_t::load_by_hash<uint16_t>(code, opnd1_addr, opnd1);
+        uint16_t opnd_rip;
+        utils_t::load_by_hash(opnd_rip, code, utils_t::hash_mix((seed ^ args) + 0));
 
-        LOG_GENESIS(MIND, "BR_ABS <%d>", opnd1);
+        LOG_GENESIS(MIND, "BR_ABS <%d>", opnd_rip);
 
-        rip = opnd1;
-        utils_t::save_by_hash<uint16_t>(code, rip_addr, rip);
+        rip = opnd_rip;
         break;
 
       } case 3: {
-        hd.arg++;
-        uint64_t opnd1 = {};
-        uint64_t opnd1_addr = utils_t::fasthash64(&hd, sizeof(hd), seed);
-        utils_t::load_by_hash<uint16_t>(code, opnd1_addr, opnd1);
+        uint16_t opnd_ind;
+        utils_t::load_by_hash(opnd_ind, code, utils_t::hash_mix((seed ^ args) + 0));
 
-        hd.arg++;
-        uint64_t opnd2 = {};
-        uint64_t opnd2_addr = utils_t::fasthash64(&hd, sizeof(hd), seed);
-        utils_t::load_by_hash<uint8_t>(code, opnd2_addr, opnd2);
+        uint8_t opnd_val;
+        utils_t::load_by_hash(opnd_val, code, utils_t::hash_mix((seed ^ args) + 1));
 
-        LOG_GENESIS(MIND, "SET_U8 <%d> <%d>", opnd1, opnd2);
+        LOG_GENESIS(MIND, "SET_U8 <%d> <%d>", opnd_ind, opnd_val);
 
-        code[opnd1 % code.size()] = opnd2;
+        utils_t::save_by_hash(opnd_val, code, opnd_ind);
         break;
 
       } case 4: {
-        hd.arg++;
-        uint64_t opnd1 = {};
-        uint64_t opnd1_addr = utils_t::fasthash64(&hd, sizeof(hd), seed);
-        utils_t::load_by_hash<uint16_t>(code, opnd1_addr, opnd1);
+        uint16_t opnd_ind;
+        utils_t::load_by_hash(opnd_ind, code, utils_t::hash_mix((seed ^ args) + 0));
 
-        hd.arg++;
-        uint64_t opnd2 = {};
-        uint64_t opnd2_addr = utils_t::fasthash64(&hd, sizeof(hd), seed);
-        utils_t::load_by_hash<uint16_t>(code, opnd2_addr, opnd2);
+        uint16_t opnd_val;
+        utils_t::load_by_hash(opnd_val, code, utils_t::hash_mix((seed ^ args) + 1));
 
-        LOG_GENESIS(MIND, "SET_U8 <%d> <%d>", opnd1, opnd2);
+        LOG_GENESIS(MIND, "SET_U16 <%d> <%d>", opnd_ind, opnd_val);
 
-        code[opnd1 % code.size()] = code[opnd2 % code.size()];
+        utils_t::save_by_hash(opnd_val, code, opnd_ind);
         break;
 
       } case 5: {
-        hd.arg++;
-        uint64_t opnd1 = {};
-        uint64_t opnd1_addr = utils_t::fasthash64(&hd, sizeof(hd), seed);
-        utils_t::load_by_hash<uint16_t>(code, opnd1_addr, opnd1);
+        uint16_t opnd_ind;
+        utils_t::load_by_hash(opnd_ind, code, utils_t::hash_mix((seed ^ args) + 0));
 
-        hd.arg++;
-        uint64_t opnd2 = {};
-        uint64_t opnd2_addr = utils_t::fasthash64(&hd, sizeof(hd), seed);
-        utils_t::load_by_hash<uint16_t>(code, opnd2_addr, opnd2);
+        uint8_t opnd2;
+        utils_t::load_by_hash(opnd2, code, utils_t::hash_mix((seed ^ args) + 1));
 
-        hd.arg++;
-        uint64_t opnd3 = {};
-        uint64_t opnd3_addr = utils_t::fasthash64(&hd, sizeof(hd), seed);
-        utils_t::load_by_hash<uint16_t>(code, opnd3_addr, opnd3);
+        uint8_t opnd3;
+        utils_t::load_by_hash(opnd3, code, utils_t::hash_mix((seed ^ args) + 2));
 
-        LOG_GENESIS(MIND, "ADD <%d> <%d> <%d>", opnd1, opnd2, opnd3);
+        LOG_GENESIS(MIND, "ADD_U8 <%d> <%d> <%d>", opnd_ind, opnd2, opnd3);
 
-        code[opnd1 % code.size()] = code[opnd2 % code.size()] + code[opnd3 % code.size()];
+        uint8_t res = opnd2 + opnd3;
+        utils_t::save_by_hash(res, code, opnd_ind);
         break;
 
       } case 6: {
-        hd.arg++;
-        uint64_t opnd1 = {};
-        uint64_t opnd1_addr = utils_t::fasthash64(&hd, sizeof(hd), seed);
-        utils_t::load_by_hash<uint16_t>(code, opnd1_addr, opnd1);
+        uint16_t opnd_ind;
+        utils_t::load_by_hash(opnd_ind, code, utils_t::hash_mix((seed ^ args) + 0));
 
-        hd.arg++;
-        uint64_t opnd2 = {};
-        uint64_t opnd2_addr = utils_t::fasthash64(&hd, sizeof(hd), seed);
-        utils_t::load_by_hash<uint16_t>(code, opnd2_addr, opnd2);
+        uint8_t opnd2;
+        utils_t::load_by_hash(opnd2, code, utils_t::hash_mix((seed ^ args) + 1));
 
-        hd.arg++;
-        uint64_t opnd3 = {};
-        uint64_t opnd3_addr = utils_t::fasthash64(&hd, sizeof(hd), seed);
-        utils_t::load_by_hash<uint16_t>(code, opnd3_addr, opnd3);
+        uint8_t opnd3;
+        utils_t::load_by_hash(opnd3, code, utils_t::hash_mix((seed ^ args) + 2));
 
-        LOG_GENESIS(MIND, "SUB <%d> <%d> <%d>", opnd1, opnd2, opnd3);
+        LOG_GENESIS(MIND, "SUB_U8 <%d> <%d> <%d>", opnd_ind, opnd2, opnd3);
 
-        code[opnd1 % code.size()] = code[opnd2 % code.size()] - code[opnd3 % code.size()];
+        uint8_t res = opnd2 - opnd3;
+        utils_t::save_by_hash(res, code, opnd_ind);
         break;
 
         // MULT
@@ -1154,14 +1114,12 @@ namespace genesis_n {
         // IF
 
       } case 16: {
-        hd.arg++;
-        uint64_t dir = {};
-        uint64_t dir_addr = utils_t::fasthash64(&hd, sizeof(hd), seed);
-        utils_t::load_by_hash<uint8_t>(code, dir_addr, dir);
+        uint8_t opnd_dir;
+        utils_t::load_by_hash(opnd_dir, code, utils_t::hash_mix((seed ^ args) + 0));
 
-        LOG_GENESIS(MIND, "TURN <%zd>", dir);
+        LOG_GENESIS(MIND, "TURN <%zd>", opnd_dir);
 
-        microbe.direction = (microbe.direction + dir) % utils_t::direction_max;
+        microbe.direction = (microbe.direction + opnd_dir) % utils_t::direction_max;
         break;
 
       } case 17: {
@@ -1189,20 +1147,16 @@ namespace genesis_n {
         break;
 
       } case 19: {
-        hd.arg++;
-        uint64_t opnd1 = {};
-        uint64_t opnd1_addr = utils_t::fasthash64(&hd, sizeof(hd), seed);
-        utils_t::load_by_hash<uint8_t>(code, opnd1_addr, opnd1);
+        uint8_t opnd_dir;
+        utils_t::load_by_hash(opnd_dir, code, utils_t::hash_mix((seed ^ args) + 0));
 
-        hd.arg++;
-        uint64_t opnd2 = {};
-        uint64_t opnd2_addr = utils_t::fasthash64(&hd, sizeof(hd), seed);
-        utils_t::load_by_hash<uint16_t>(code, opnd2_addr, opnd2);
+        uint16_t opnd_probability;
+        utils_t::load_by_hash(opnd_probability, code, utils_t::hash_mix((seed ^ args) + 1));
 
-        LOG_GENESIS(MIND, "CLONE <%zd> <%zd>", opnd1, opnd2);
+        LOG_GENESIS(MIND, "CLONE <%d> <%d>", opnd1, opnd2);
 
-        uint64_t direction = opnd1 % utils_t::direction_max;
-        double probability = 0.1 * opnd2 / 0xFFFF / code.size();
+        uint64_t direction = opnd_dir % utils_t::direction_max;
+        double probability = 0.1 * opnd_probability / 0xFFFF / code.size();
 
         LOG_GENESIS(MIND, "energy %zd", microbe.resources.at(utils_t::ENERGY).count);
         auto pos_n = pos_next(microbe.pos, direction);
@@ -1229,17 +1183,15 @@ namespace genesis_n {
         break;
 
       } case 20: {
-        hd.arg++;
-        uint64_t opnd1 = {};
-        uint64_t opnd1_addr = utils_t::fasthash64(&hd, sizeof(hd), seed);
-        utils_t::load_by_hash<uint16_t>(code, opnd1_addr, opnd1);
+        uint16_t opnd_recipe;
+        utils_t::load_by_hash(opnd_recipe, code, utils_t::hash_mix((seed ^ args) + 0));
 
-        LOG_GENESIS(MIND, "RECIPE <%zd>", opnd1);
+        LOG_GENESIS(MIND, "RECIPE <%zd>", opnd_recipe);
 
-        [this, &microbe, opnd1]() {
+        [this, &microbe, opnd_recipe]() {
           const auto& recipes = ctx.config.recipes;
           auto it = recipes.begin();
-          std::advance(it, opnd1 % recipes.size());
+          std::advance(it, opnd_recipe % recipes.size());
           const auto& recipe = it->second;
           LOG_GENESIS(MIND, "name %s", recipe.name.c_str());
 
@@ -1287,6 +1239,8 @@ namespace genesis_n {
         break;
       }
     }
+
+    utils_t::save_by_hash(rip, code, utils_t::CODE_RIP2B);
   }
 
   void world_t::init() {
