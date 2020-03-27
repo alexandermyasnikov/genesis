@@ -54,14 +54,6 @@ int main(int argc, char* argv[]) {
     areas.push_back({area.pos, area.radius});
   }
 
-  std::thread thread_update([&stop, &world, &mutex_world](){
-    while (!stop) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-      const std::lock_guard<std::timed_mutex> lock(mutex_world);
-      world.update();
-    }
-  });
-
   const auto& config = world.ctx.config;
 
   const float size_x = config.x_max;
@@ -79,6 +71,14 @@ int main(int argc, char* argv[]) {
     std::cerr << "ERROR: can not load font" << std::endl;
     return -1;
   }
+
+  std::thread thread_update([&stop, &world, &mutex_world](){
+    while (!stop) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      const std::lock_guard<std::timed_mutex> lock(mutex_world);
+      world.update();
+    }
+  });
 
   while (window.isOpen()) {
     sf::Event event;
@@ -149,9 +149,12 @@ int main(int argc, char* argv[]) {
       }
 
       const auto& stats = world.ctx.stats;
-      stats_text = std::string{} + "stats:"
-        + "\n\tage: " + std::to_string(stats.age)
-        + "\n\tmicrobes_count: " + std::to_string(stats.microbes_count)
+      stats_text = std::string{}
+        + "\n age: " + std::to_string(stats.age)
+        + "\n microbes_count: " + std::to_string(stats.microbes_count)
+        + "\n microbes_age_avg: " + std::to_string((uint64_t) stats.microbes_age_avg)
+        + "\n time_update: " + std::to_string(stats.time_update)
+        + "\n bpms: " + std::to_string(uint64_t (stats.microbes_count / stats.time_update))
         + "";
 
       mutex_world.unlock();

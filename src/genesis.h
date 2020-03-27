@@ -221,6 +221,8 @@ namespace genesis_n {
   struct stats_json_t {
     uint64_t   age              = {};
     uint64_t   microbes_count   = {};
+    double     microbes_age_avg = {};
+    uint64_t   time_update      = {};
   };
 
   struct context_json_t {
@@ -467,12 +469,16 @@ namespace genesis_n {
     TRACE_GENESIS;
     JSON_SAVE2(json, stats_json, age);
     JSON_SAVE2(json, stats_json, microbes_count);
+    JSON_SAVE2(json, stats_json, microbes_age_avg);
+    JSON_SAVE2(json, stats_json, time_update);
   }
 
   inline void from_json(const nlohmann::json& json, stats_json_t& stats_json) {
     TRACE_GENESIS;
     JSON_LOAD2(json, stats_json, age);
     JSON_LOAD2(json, stats_json, microbes_count);
+    JSON_LOAD2(json, stats_json, microbes_age_avg);
+    JSON_LOAD2(json, stats_json, time_update);
   }
 
   inline void to_json(nlohmann::json& json, const context_json_t& context_json) {
@@ -682,7 +688,9 @@ namespace genesis_n {
     energy_remaining   = {};
     alive              = true;
 
-    resources[utils_t::RES_ENERGY] = config.resources[utils_t::RES_ENERGY].stack_size / 2;
+    if (resources[utils_t::RES_ENERGY] <= 0) {
+      resources[utils_t::RES_ENERGY] = config.resources[utils_t::RES_ENERGY].stack_size / 2;
+    }
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -868,8 +876,11 @@ namespace genesis_n {
   void world_t::update() {
     TRACE_GENESIS;
 
+    auto time_prev_ms = time_ms;
     time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
+
+    ctx.stats.time_update = time_ms - time_prev_ms;
 
     LOG_GENESIS(TIME, "time %zd", time_ms);
 
@@ -892,6 +903,7 @@ namespace genesis_n {
     TRACE_GENESIS;
 
     ctx.stats.microbes_count = {};
+    ctx.stats.microbes_age_avg = {};
 
     for (auto& microbe : ctx.microbes) {
       microbe.energy_remaining = ctx.config.energy_remaining;
@@ -918,6 +930,7 @@ namespace genesis_n {
       if (microbe.age >= ctx.config.age_max
           || microbe.resources[utils_t::RES_ENERGY] <= 0)
       {
+        microbe = {};
         microbe.alive = false;
         continue;
       }
@@ -926,6 +939,7 @@ namespace genesis_n {
       microbe.resources[utils_t::RES_ENERGY]--;
 
       ctx.stats.microbes_count++;
+      ctx.stats.microbes_age_avg += microbe.age;
     }
 
     {
@@ -950,6 +964,7 @@ namespace genesis_n {
     // stats
     {
       ctx.stats.age++;
+      ctx.stats.microbes_age_avg /= ctx.stats.microbes_count;
     }
   }
 
@@ -1115,6 +1130,7 @@ namespace genesis_n {
             count /= 2;
           }
           auto microbe_child = microbe;
+          microbe_child.init(ctx.config);
           microbe_child.pos = pos_n;
           for (auto& byte : microbe_child.code) {
             if (utils_t::rand_u64() % 0xFFFF < probability) {
