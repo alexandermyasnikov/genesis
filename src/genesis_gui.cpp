@@ -157,7 +157,7 @@ int main(int argc, char* argv[]) {
 
       const auto& stats = world.stats;
       stats_text = std::string{}
-        + "\n age: " + std::to_string(stats.age)
+        + "age: " + std::to_string(stats.age)
         + "\n microbes_count: " + std::to_string(stats.microbes_count)
         + "\n microbes_age_avg: " + std::to_string((uint64_t) stats.microbes_age_avg)
         + "\n time_update: " + std::to_string(stats.time_update)
@@ -202,7 +202,7 @@ int main(int argc, char* argv[]) {
       sf::Text text;
       text.setFont(font);
       text.setString(stats_text);
-      text.setCharacterSize(24);
+      text.setCharacterSize(18);
       text.setFillColor(sf::Color::Black);
       window.draw(text);
 
