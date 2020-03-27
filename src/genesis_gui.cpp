@@ -10,14 +10,21 @@ struct sfml_window_t {
 
 int main(int argc, char* argv[]) {
 
-  if (argc <= 1) {
+  if (argc <= 2) {
     std::cerr << "usage: " << (argc > 0 ? argv[0] : "<program>")
-        << " <world_name.json>" << std::endl;
+        << " <config.json> <world.json>" << std::endl;
     return -1;
   }
 
   std::error_code ec;
-  std::string file_name = std::filesystem::absolute(argv[1], ec);
+  std::string config_file_name = std::filesystem::absolute(argv[1], ec);
+
+  if (ec) {
+    std::cerr << "invalid path: " << ec.message().c_str() << std::endl;
+    return -1;
+  }
+
+  std::string world_file_name = std::filesystem::absolute(argv[2], ec);
 
   if (ec) {
     std::cerr << "invalid path: " << ec.message().c_str() << std::endl;
@@ -27,7 +34,8 @@ int main(int argc, char* argv[]) {
   using namespace genesis_n;
 
   world_t world;
-  world.file_name = file_name;
+  world.config_file_name = config_file_name;
+  world.world_file_name  = world_file_name;
   world.init();
 
   std::atomic<bool> stop = false;
@@ -43,18 +51,18 @@ int main(int argc, char* argv[]) {
   std::string stats_text = {};
 
   microbes = {};
-  for (const auto& microbe : world.ctx.microbes) {
+  for (const auto& microbe : world.microbes) {
     if (microbe.alive) {
       microbes.push_back(microbe.pos);
     }
   }
 
   areas = {};
-  for (const auto& [_, area] : world.ctx.config.areas) {
+  for (const auto& [_, area] : world.config.areas) {
     areas.push_back({area.pos, area.radius});
   }
 
-  const auto& config = world.ctx.config;
+  const auto& config = world.config;
 
   const float size_x = config.x_max;
   const float size_y = config.y_max;
@@ -134,32 +142,29 @@ int main(int argc, char* argv[]) {
     }
 
     if (mutex_world.try_lock_for(std::chrono::milliseconds(100))) {
-      // std::cout << "try_lock ok" << std::endl;
 
       areas = {};
-      for (const auto& [_, area] : world.ctx.config.areas) {
+      for (const auto& [_, area] : world.config.areas) {
         areas.push_back({area.pos, area.radius});
       }
 
       microbes = {};
-      for (const auto& microbe : world.ctx.microbes) {
+      for (const auto& microbe : world.microbes) {
         if (microbe.alive) {
           microbes.push_back(microbe.pos);
         }
       }
 
-      const auto& stats = world.ctx.stats;
+      const auto& stats = world.stats;
       stats_text = std::string{}
         + "\n age: " + std::to_string(stats.age)
         + "\n microbes_count: " + std::to_string(stats.microbes_count)
         + "\n microbes_age_avg: " + std::to_string((uint64_t) stats.microbes_age_avg)
         + "\n time_update: " + std::to_string(stats.time_update)
-        + "\n bpms: " + std::to_string(uint64_t (stats.microbes_count / stats.time_update))
+        + "\n bpms: " + std::to_string(uint64_t (stats.microbes_count / std::max(1UL, stats.time_update)))
         + "";
 
       mutex_world.unlock();
-    } else {
-      // std::cout << "try_lock failed" << std::endl;
     }
 
     window.clear(sf::Color(240, 240, 240));
@@ -167,7 +172,7 @@ int main(int argc, char* argv[]) {
 
     {
       sf::RectangleShape rectangle;
-      rectangle.setSize(sf::Vector2f(world.ctx.config.x_max, world.ctx.config.y_max));
+      rectangle.setSize(sf::Vector2f(world.config.x_max, world.config.y_max));
       rectangle.setPosition(sf::Vector2f(0, 0));
       rectangle.setFillColor(sf::Color(200, 200, 200));
       window.draw(rectangle);
