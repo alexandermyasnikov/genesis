@@ -63,7 +63,6 @@ int main(int argc, char* argv[]) {
   }
 
   const auto& config = world.config;
-
   const float size_x = config.x_max;
   const float size_y = config.y_max;
 
@@ -72,6 +71,12 @@ int main(int argc, char* argv[]) {
 
   sf::View view_world;
   sf::View view_text;
+
+  view_world.setSize(size_x, size_y);
+  view_world.setCenter(view_world.getSize().x / 2, view_world.getSize().y / 2);
+
+  sf::Vector2f pos_old;
+  bool moving = false;
 
   sf::Font font;
   std::string font_path = "./resources/fonts/Roboto-Regular.ttf";
@@ -97,52 +102,67 @@ int main(int argc, char* argv[]) {
           window.close();
           break;
 
+        } case sf::Event::MouseButtonPressed: {
+          if (event.mouseButton.button == sf::Mouse::Left) {
+            moving = true;
+            pos_old = window.mapPixelToCoords(sf::Vector2i(event.mouseButton.x, event.mouseButton.y));
+          }
+          break;
+
+        } case sf::Event::MouseButtonReleased: {
+          if (event.mouseButton.button == sf::Mouse::Left) {
+            moving = false;
+          }
+          break;
+
+        } case sf::Event::MouseMoved: {
+          if (!moving)
+            break;
+
+          const sf::Vector2f pos_new = window.mapPixelToCoords(sf::Vector2i(event.mouseMove.x, event.mouseMove.y));
+          const sf::Vector2f pos_delta = pos_old - pos_new;
+
+          view_world.setCenter(view_world.getCenter() + pos_delta);
+          window.setView(view_world);
+          pos_old = window.mapPixelToCoords(sf::Vector2i(event.mouseMove.x, event.mouseMove.y));
+          break;
+
+        } case sf::Event::MouseWheelScrolled: {
+          if (moving)
+            break;
+
+          float zoom = 1.05;
+          if (event.mouseWheelScroll.delta > 0) {
+            zoom = 1 / zoom;
+          }
+
+          view_world.zoom(zoom);
+          window.setView(view_world);
+          break;
+
         } case sf::Event::Resized: {
           double aspect_ratio = double(window.getSize().x) / window.getSize().y;
 
-          view_world.setCenter(window.getSize().x/2, window.getSize().y/2);
           view_world.setSize(window.getSize().x, window.getSize().x / aspect_ratio);
 
           view_text.setCenter(window.getSize().x/2, window.getSize().y/2);
           view_text.setSize(window.getSize().x, window.getSize().x / aspect_ratio);
           break;
         }
+
         default: break;
       }
     }
 
     if (window.hasFocus()) {
-      if (sf::Keyboard::isKeyPressed(sf::Keyboard::Q)) {
-        window.close();
-      }
-
-      if (sf::Keyboard::isKeyPressed(sf::Keyboard::Add)) {
-        view_world.zoom(0.9);
-      }
-
-      if (sf::Keyboard::isKeyPressed(sf::Keyboard::Subtract)) {
-        view_world.zoom(1.1);
-      }
-
-      if (sf::Keyboard::isKeyPressed(sf::Keyboard::Left)) {
-        view_world.move(-10, 0);
-      }
-
-      if (sf::Keyboard::isKeyPressed(sf::Keyboard::Right)) {
-        view_world.move(10, 0);
-      }
-
-      if (sf::Keyboard::isKeyPressed(sf::Keyboard::Up)) {
-        view_world.move(0, -10);
-      }
-
-      if (sf::Keyboard::isKeyPressed(sf::Keyboard::Down)) {
-        view_world.move(0, 10);
+      if (sf::Keyboard::isKeyPressed(sf::Keyboard::U)) {
+        world.save_data();
+        world.load_config();
+        world.load_data();
       }
     }
 
     if (mutex_world.try_lock_for(std::chrono::milliseconds(100))) {
-
       areas = {};
       for (const auto& [_, area] : world.config.areas) {
         areas.push_back({area.pos, area.radius});
@@ -157,7 +177,7 @@ int main(int argc, char* argv[]) {
 
       const auto& stats = world.stats;
       stats_text = std::string{}
-        + "age: " + std::to_string(stats.age)
+        + " age: " + std::to_string(stats.age)
         + "\n microbes_count: " + std::to_string(stats.microbes_count)
         + "\n microbes_age_avg: " + std::to_string((uint64_t) stats.microbes_age_avg)
         + "\n time_update: " + std::to_string(stats.time_update)
@@ -216,7 +236,7 @@ int main(int argc, char* argv[]) {
 
   thread_update.join();
 
-  world.save();
+  world.save_data();
 
   return 0;
 }

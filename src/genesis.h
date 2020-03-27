@@ -276,8 +276,10 @@ namespace genesis_n {
     void update_ctx();
     void update_mind(microbe_t& microbe);
     void init();
-    void load();
-    void save();
+    void load_config();
+    void load_data();
+    void save_config();
+    void save_data();
 
     uint64_t xy_pos_to_ind(const utils_t::xy_pos_t& pos) {
       TRACE_GENESIS;
@@ -758,7 +760,7 @@ namespace genesis_n {
     if (save_world_ms < time_ms) {
       LOG_GENESIS(TIME, "save_world_ms %zd   %zd", time_ms, time_ms - save_world_ms);
       save_world_ms = time_ms + config.interval_save_world_ms;
-      save();
+      save_data();
     }
 
     LOG_GENESIS(TIME, "time end %zd", time_ms);
@@ -1068,67 +1070,71 @@ namespace genesis_n {
 
   void world_t::init() {
     TRACE_GENESIS;
-    load();
+    load_config();
+    load_data();
     utils_t::seed = config.seed ? config.seed : time(0);
     utils_t::debug = config.debug;
-    save();
+    save_config();
+    save_data();
   }
 
-  void world_t::load() {
+  void world_t::load_config() {
     TRACE_GENESIS;
 
-    {
-      nlohmann::json json;
-      if (!utils_t::load(json, config_file_name)) {
-        LOG_GENESIS(ERROR, "can not load file %s", config_file_name.c_str());
-        throw std::runtime_error("invalid config json");
-      }
-
-      config_json_t config_json = json;
-
-      if (!config.from_json(config_json)) {
-        LOG_GENESIS(ERROR, "invalid config");
-        throw std::runtime_error("invalid config");
-      }
+    nlohmann::json json;
+    if (!utils_t::load(json, config_file_name)) {
+      LOG_GENESIS(ERROR, "can not load file %s", config_file_name.c_str());
+      throw std::runtime_error("invalid config json");
     }
 
-    {
-      nlohmann::json json;
-      if (!utils_t::load(json, world_file_name)) {
-        LOG_GENESIS(ERROR, "can not load file %s", world_file_name.c_str());
-        microbes = {};
-      } else {
-        microbes = (world_t::microbes_t) json;
-      }
+    config_json_t config_json = json;
 
-      microbes.resize(config.x_max * config.y_max);
-      for (auto& microbe : microbes) {
-        if (!microbe.validation(config)) {
-          microbe = {};
-        }
+    if (!config.from_json(config_json)) {
+      LOG_GENESIS(ERROR, "invalid config");
+      throw std::runtime_error("invalid config");
+    }
+  }
+
+  void world_t::load_data() {
+    TRACE_GENESIS;
+
+    nlohmann::json json;
+    if (!utils_t::load(json, world_file_name)) {
+      LOG_GENESIS(ERROR, "can not load file %s", world_file_name.c_str());
+      microbes = {};
+    } else {
+      microbes = (world_t::microbes_t) json;
+    }
+
+    microbes.resize(config.x_max * config.y_max);
+    for (auto& microbe : microbes) {
+      if (!microbe.validation(config)) {
+        microbe = {};
       }
     }
   }
 
-  void world_t::save() {
+  void world_t::save_config() {
     TRACE_GENESIS;
 
 #if !VALGRIND
-    {
-      config_json_t config_json;
-      if (!config.to_json(config_json)) {
-        LOG_GENESIS(ERROR, "invalid config");
-        throw std::runtime_error("invalid config");
-      }
-
-      nlohmann::json json = config_json;
-      utils_t::save(json, config_file_name);
+    config_json_t config_json;
+    if (!config.to_json(config_json)) {
+      LOG_GENESIS(ERROR, "invalid config");
+      throw std::runtime_error("invalid config");
     }
 
-    {
-      nlohmann::json json = microbes;
-      utils_t::save(json, world_file_name);
-    }
+    nlohmann::json json = config_json;
+    utils_t::save(json, config_file_name);
+#endif
+  }
+
+  void world_t::save_data() {
+    TRACE_GENESIS;
+
+#if !VALGRIND
+    nlohmann::json json = microbes;
+    utils_t::save(json, world_file_name);
 #endif
   }
 
