@@ -181,8 +181,10 @@ struct genesis_sfml_t {
     const std::lock_guard<std::timed_mutex> lock(mutex_world);
 
     areas = {};
-    for (const auto& [_, area] : world.config.areas) {
-      areas.push_back({area.pos, area.radius});
+    for (const auto& areas_v : world.config.areas) {
+      for (const auto& area : areas_v) {
+        areas.push_back({area.pos, area.radius});
+      }
     }
 
     microbes = {};

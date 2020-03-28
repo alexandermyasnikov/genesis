@@ -10,7 +10,6 @@
 #include <vector>
 #include <chrono>
 #include <thread>
-#include <deque>
 #include <regex>
 #include <list>
 #include <set>
@@ -155,7 +154,6 @@ namespace genesis_n {
     //    t = ((x - x1) ^ 2 + (y - y1) ^ 2) ^ 0.5 - расстояние до центра источника
     //    y *= out.count
 
-    uint64_t      resource_ind      = {};
     xy_pos_t      pos               = {};
     uint64_t      radius            = 100;
     double        factor            = 1;
@@ -180,7 +178,7 @@ namespace genesis_n {
   struct config_json_t {
     using debug_t       = std::set<std::string>;
     using resources_t   = std::vector<resource_info_json_t>;
-    using areas_t       = std::map<size_t/*resource_ind*/, area_json_t>; // TODO map<size_t, vector<area_json_t>>
+    using areas_t       = std::vector<std::vector<area_json_t>>;
     using recipes_t     = std::vector<recipe_json_t>;
     using xy_pos_t      = utils_t::xy_pos_t;
 
@@ -232,7 +230,7 @@ namespace genesis_n {
   struct config_t {
     using debug_t       = std::set<std::string>;
     using resources_t   = std::vector<resource_info_json_t>;
-    using areas_t       = std::map<size_t/*ind*/, area_json_t>;
+    using areas_t       = std::vector<std::vector<area_json_t>>;
     using recipes_t     = std::vector<recipe_json_t>;
     using xy_pos_t      = utils_t::xy_pos_t;
 
@@ -328,7 +326,6 @@ namespace genesis_n {
 
   inline void to_json(nlohmann::json& json, const area_json_t& area_json) {
     TRACE_GENESIS;
-    JSON_SAVE2(json, area_json, resource_ind);
     JSON_SAVE2(json, area_json, pos);
     JSON_SAVE2(json, area_json, radius);
     JSON_SAVE2(json, area_json, factor);
@@ -337,7 +334,6 @@ namespace genesis_n {
 
   inline void from_json(const nlohmann::json& json, area_json_t& area_json) {
     TRACE_GENESIS;
-    JSON_LOAD2(json, area_json, resource_ind);
     JSON_LOAD2(json, area_json, pos);
     JSON_LOAD2(json, area_json, radius);
     JSON_LOAD2(json, area_json, factor);
@@ -655,17 +651,7 @@ namespace genesis_n {
     }
 
     areas = config_json.areas;
-    for (const auto& [resource_ind, area] : areas) {
-      if (resource_ind != area.resource_ind || resource_ind >= config_json.resources.size()) {
-        LOG_GENESIS(ERROR, "invalid config_t::area");
-        return false;
-      }
-    }
-
-    if (areas.size() > 100) {
-      LOG_GENESIS(ERROR, "invalid config_t::areas %zd", areas.size());
-      return false;
-    }
+    areas.resize(resources.size());
 
     recipes = config_json.recipes;
     if (recipes.size() < 1 || recipes.size() > 100) {
@@ -1038,10 +1024,9 @@ namespace genesis_n {
             if (resource_info.extractable) {
               double multiplier = {};
               LOG_GENESIS(MIND, "ind %zd", ind);
-              const auto range = config.areas.equal_range(ind);
+              const auto& areas = config.areas[ind];
 
-              for (auto it = range.first; it != range.second; ++it) {
-                const auto& area = it->second;
+              for (const auto& area : areas) {
                 uint64_t dist = utils_t::distance(microbe.pos, area.pos);
                 multiplier += area.factor * std::max(0.,
                     1. - std::pow(std::abs((double) dist / area.radius), area.sigma));
