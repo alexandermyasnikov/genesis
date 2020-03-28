@@ -16,44 +16,132 @@
 
 ### Demo (youtube)
 
-[![Demo](http://img.youtube.com/vi/umJeFR3tPzM/0.jpg)](http://www.youtube.com/watch?v=umJeFR3tPzM "Demo v0.1")
-[![Demo](http://img.youtube.com/vi/e1RQdhpmTjM/0.jpg)](http://www.youtube.com/watch?v=e1RQdhpmTjM "Demo v0.2")
+[![Demo](http://img.youtube.com/vi/-uerfX1w4SQ/0.jpg)](https://www.youtube.com/watch?v=-uerfX1w4SQ "Demo v0.2")
 
 
 
-### Cell
+### World
 
-* properpies
-  * id
-  * age
-  * health
-  * experience
-  * [resource]
-* type
-  * resource_producer
-    * При накоплении нужного количества ресурсов создается другой ресурс
-    * Если это природный ресурс используется формула
-      * y = factor * max(0, 1 - |t / radius| ^ sigma)
-  * spore
-    * При накоплении нужного количества ресурсов создается бактерия
-  * defender
-    * При обнаружении вражеских клеток наносит им урон
-  * transfer
-* cell_pipe
-  * velocity
-  * resource_index
+* Мир - прямоугольная область, состоящая из клеток.
+* Присутствуют области с ресурсами, которые боты могут извлекать.
+* В одной клетке может находиться один бот.
 
 
 
-### bacteria
+### Bot (Microbe)
 
-* memory
-  * code: [u8]
-  * // registers_global: (ip:u32, frame:u32, registers:[u32])
-  * // interrupts: [(id:u32, ip:u32, arg1:u32, arg2:u32, arg3:u32)]
-  * // stack: [(ip:u32, arg1:u32, arg2:u32, arg3:u32, registers:[u32])]
-* command
-  * todo
+* Бот содержит геном (код), которые определяет поведение бота.
+* У бота есть хранилице ресурсов.
+* Ресурсы могут создаваться из других ресурсов или извекаться из вне.
+* Бот может перемещаться, добывать/создавать ресурсы, клонировать себя, манипулировать со своим геномом.
+* Время жизни бота ограничено.
+
+
+
+### TODO
+
+* Добавить команды атаки и другие.
+* Добавить возможность определять родственные геномы.
+* Добавить возможность реагировать бота на раздражения (прерывания).
+
+
+
+### Config
+
+* Все параметры вынесены в файл конфига.
+* Пример файла:
+
+```
+{
+  "age_max": 1000,
+  "areas": {
+    "sunlight": [
+      {
+        "factor": 1.0,
+        "pos": [
+          300,
+          500
+        ],
+        "radius": 50,
+        "sigma": 2.0
+      },
+      {
+        "factor": 1.0,
+        "pos": [
+          500,
+          300
+        ],
+        "radius": 250,
+        "sigma": 2.0
+      },
+      {
+        "factor": 1.0,
+        "pos": [
+          200,
+          200
+        ],
+        "radius": 150,
+        "sigma": 2.0
+      }
+    ]
+  },
+  "code_size": 64,
+  "debug": [
+    "_mind ",
+    "_trace",
+    "debug",
+    "error",
+    "time"
+  ],
+  "energy_remaining": 5,
+  "interval_save_world_ms": 600000,
+  "interval_update_world_ms": 1,
+  "recipes": [
+    {
+      "available": true,
+      "in_out": {
+        "energy": 10,
+        "sunlight": -10
+      },
+      "name": "sunlight_to_energy"
+    },
+    {
+      "available": true,
+      "in_out": {
+        "sunlight": 10
+      },
+      "name": "sunlight_extract"
+    }
+  ],
+  "resources": [
+    {
+      "extractable": false,
+      "name": "energy",
+      "stack_size": 1000
+    },
+    {
+      "extractable": true,
+      "name": "sunlight",
+      "stack_size": 1000
+    },
+    {
+      "extractable": false,
+      "name": "water",
+      "stack_size": 1000
+    }
+  ],
+  "seed": 0,
+  "spawn_max_count": 501,
+  "spawn_min_count": 500,
+  "spawn_pos": [
+    200,
+    200
+  ],
+  "spawn_radius": 50,
+  "x_max": 600,
+  "y_max": 600
+}
+```
 
 
 
