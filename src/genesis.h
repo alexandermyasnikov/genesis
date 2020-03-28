@@ -58,15 +58,6 @@ namespace genesis_n {
   struct world_t;
 
   struct utils_t {
-    struct hash_data_t {
-      uint16_t rip;
-      uint8_t  hash0;
-      uint8_t  hash1;
-      uint8_t  cmd;
-      uint8_t  arg;
-      uint16_t reserved;
-    } __attribute__((packed));
-
     using xy_pos_t = std::pair<uint64_t, uint64_t>;
 
     struct xy_pos_hash_t {
@@ -167,8 +158,8 @@ namespace genesis_n {
   };
 
   struct recipe_json_t {
-    using in_t    = std::map<size_t/*ind*/, int64_t/*count*/>;
-    using out_t   = std::map<size_t/*ind*/, int64_t/*count*/>;
+    using in_t    = std::map<std::string/*name*/, int64_t/*count*/>;
+    using out_t   = std::map<std::string/*name*/, int64_t/*count*/>;
 
     std::string   name              = {};
     in_t          in                = {};
@@ -227,11 +218,23 @@ namespace genesis_n {
     void init(const config_t& config);
   };
 
+  struct recipe_t {
+    using in_t    = std::map<size_t/*ind*/, int64_t/*count*/>;
+    using out_t   = std::map<size_t/*ind*/, int64_t/*count*/>;
+
+    std::string   name              = {};
+    in_t          in                = {};
+    out_t         out               = {};
+
+    bool from_json(const recipe_json_t& recipe_json, const config_t& config);
+    bool to_json(recipe_json_t& recipe_json, const config_t& config) const;
+  };
+
   struct config_t {
     using debug_t       = std::set<std::string>;
     using resources_t   = std::vector<resource_info_json_t>;
     using areas_t       = std::vector<std::vector<area_json_t>>;
-    using recipes_t     = std::vector<recipe_json_t>;
+    using recipes_t     = std::vector<recipe_t>;
     using xy_pos_t      = utils_t::xy_pos_t;
 
     uint64_t      x_max;
@@ -607,6 +610,63 @@ namespace genesis_n {
 
   ////////////////////////////////////////////////////////////////////////////////
 
+  bool recipe_t::from_json(const recipe_json_t& recipe_json, const config_t& config) {
+    TRACE_GENESIS;
+
+    name = recipe_json.name;
+    if (name.empty()) {
+      LOG_GENESIS(ERROR, "invalid recipe_t::name %s", name.c_str());
+      return false;
+    }
+
+    for (auto& [name, count] : recipe_json.in) {
+      auto it = std::find_if(config.resources.begin(), config.resources.end(),
+          [&name](const auto& resource) { return name == resource.name; });
+
+      if (it == config.resources.end()) {
+        LOG_GENESIS(ERROR, "invalid recipe_t::in %s", name.c_str());
+        return false;
+      }
+      in[std::distance(config.resources.begin(), it)] = count;
+    }
+
+    for (auto& [name, count] : recipe_json.out) {
+      auto it = std::find_if(config.resources.begin(), config.resources.end(),
+          [&name](const auto& resource) { return name == resource.name; });
+
+      if (it == config.resources.end()) {
+        LOG_GENESIS(ERROR, "invalid recipe_t::out %s", name.c_str());
+        return false;
+      }
+      out[std::distance(config.resources.begin(), it)] = count;
+    }
+
+    if (in.empty() && out.empty()) {
+      LOG_GENESIS(ERROR, "invalid recipe_t::in, out");
+      return false;
+    }
+
+    return true;
+  }
+
+  bool recipe_t::to_json(recipe_json_t& recipe_json, const config_t& config) const {
+    TRACE_GENESIS;
+
+    recipe_json.name = name;
+
+    for (auto& [ind, count] : in) {
+      recipe_json.in[config.resources[ind].name] = count;
+    }
+
+    for (auto& [ind, count] : out) {
+      recipe_json.out[config.resources[ind].name] = count;
+    }
+
+    return true;
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
   bool config_t::from_json(const config_json_t& config_json) {
     TRACE_GENESIS;
 
@@ -658,29 +718,17 @@ namespace genesis_n {
     areas = config_json.areas;
     areas.resize(resources.size());
 
-    recipes = config_json.recipes;
+    recipes.assign(config_json.recipes.size(), {});
+    for (size_t i{}; i < recipes.size(); ++i) {
+      if (!recipes[i].from_json(config_json.recipes[i], *this)) {
+        LOG_GENESIS(ERROR, "invalid config_t::recipes %s", config_json.recipes[i].name.c_str());
+        return false;
+      }
+    }
+
     if (recipes.size() < 1 || recipes.size() > 100) {
       LOG_GENESIS(ERROR, "invalid config_t::recipes %zd", recipes.size());
       return false;
-    }
-
-    for (auto& recipe : recipes) {
-      for (auto& [ind, _] : recipe.in) {
-        if (ind >= config_json.resources.size()) {
-          LOG_GENESIS(ERROR, "invalid config_t::resources %ld", ind);
-          return false;
-        }
-      }
-      for (auto& [ind, _] : recipe.out) {
-        if (ind >= config_json.resources.size()) {
-          LOG_GENESIS(ERROR, "invalid config_t::resources %ld", ind);
-          return false;
-        }
-      }
-      if (recipe.in.empty() && recipe.out.empty()) {
-        LOG_GENESIS(ERROR, "invalid config_t::recipe");
-        return false;
-      }
     }
 
     spawn_pos = config_json.spawn_pos;
@@ -720,7 +768,10 @@ namespace genesis_n {
     config_json.debug                      = debug;
     config_json.resources                  = resources;
     config_json.areas                      = areas;
-    config_json.recipes                    = recipes;
+    config_json.recipes.assign(recipes.size(), {});
+    for (size_t i{}; i < recipes.size(); ++i) {
+      recipes[i].to_json(config_json.recipes[i], *this);
+    }
     config_json.spawn_pos                  = spawn_pos;
     config_json.spawn_radius               = spawn_radius;
     config_json.spawn_min_count            = spawn_min_count;
