@@ -214,6 +214,7 @@ namespace genesis_n {
     using code_t        = std::vector<uint8_t>;
     using xy_pos_t      = utils_t::xy_pos_t;
 
+    bool          alive                = false;
     uint64_t      family;
     code_t        code;
     resources_t   resources;
@@ -221,7 +222,6 @@ namespace genesis_n {
     uint64_t      age;
     uint64_t      direction;
     int64_t       energy_remaining;
-    bool          alive                = false;
 
     bool validation(const config_t& config);
     void init(const config_t& config);
@@ -529,6 +529,7 @@ namespace genesis_n {
 
   inline void to_json(nlohmann::json& json, const microbe_t& microbe) {
     TRACE_GENESIS;
+    JSON_SAVE2(json, microbe, alive);
     JSON_SAVE2(json, microbe, family);
     JSON_SAVE2(json, microbe, code);
     JSON_SAVE2(json, microbe, resources);
@@ -536,11 +537,11 @@ namespace genesis_n {
     JSON_SAVE2(json, microbe, age);
     JSON_SAVE2(json, microbe, direction);
     JSON_SAVE2(json, microbe, energy_remaining);
-    JSON_SAVE2(json, microbe, alive);
   }
 
   inline void from_json(const nlohmann::json& json, microbe_t& microbe) {
     TRACE_GENESIS;
+    JSON_LOAD2(json, microbe, alive);
     JSON_LOAD2(json, microbe, family);
     JSON_LOAD2(json, microbe, code);
     JSON_LOAD2(json, microbe, resources);
@@ -548,18 +549,24 @@ namespace genesis_n {
     JSON_LOAD2(json, microbe, age);
     JSON_LOAD2(json, microbe, direction);
     JSON_LOAD2(json, microbe, energy_remaining);
-    JSON_LOAD2(json, microbe, alive);
   }
 
   bool microbe_t::validation(const config_t& config) {
     TRACE_GENESIS;
 
+    if (!alive) {
+      return false;
+    }
+
     // family
 
-    while (code.size() < config.code_size) {
-      code.push_back(utils_t::rand_u64() % 0xFF);
+    if (code.size() != config.code_size) {
+      code.reserve(config.code_size);
+      while (code.size() < config.code_size) {
+        code.push_back(utils_t::rand_u64() % 0xFF);
+      }
+      code.resize(config.code_size);
     }
-    code.resize(config.code_size);
 
     for (auto& [ind, count] : resources) {
       if (ind >= config.resources.size()) {
@@ -578,14 +585,13 @@ namespace genesis_n {
 
     direction %= utils_t::direction_max;
 
-    // alive
-
     return true;
   }
 
   void microbe_t::init(const config_t& config) {
     TRACE_GENESIS;
 
+    alive              = true;
     family             = utils_t::rand_u64();
     // code
     resources          = {};
@@ -593,7 +599,6 @@ namespace genesis_n {
     age                = {};
     direction          = utils_t::rand_u64() % utils_t::direction_max;
     energy_remaining   = {};
-    alive              = true;
 
     if (resources[utils_t::RES_ENERGY] <= 0) {
       resources[utils_t::RES_ENERGY] = config.resources[utils_t::RES_ENERGY].stack_size / 2;
