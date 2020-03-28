@@ -8,6 +8,16 @@
 struct sfml_window_t {
 };
 
+struct sfml_config {
+  float    win_x        = 600;
+  float    win_y        = 600;
+  uint64_t fps          = 60;
+  std::string font_path = "./resources/fonts/Roboto-Regular.ttf";
+};
+
+struct sfml_context {
+};
+
 int main(int argc, char* argv[]) {
 
   if (argc <= 2) {
@@ -39,6 +49,7 @@ int main(int argc, char* argv[]) {
   world.init();
 
   std::atomic<bool> stop = false;
+  std::atomic<bool> pause = false;
   std::timed_mutex mutex_world;
 
   struct area_pos_t {
@@ -46,9 +57,14 @@ int main(int argc, char* argv[]) {
     uint64_t r;
   };
 
+  bool showing_help = false;
   std::list<utils_t::xy_pos_t> microbes;
   std::list<area_pos_t> areas;
   std::string stats_text = {};
+
+  static std::string help_text = std::string{}
+    + "\n U - reload config"
+    + "\n Q - quit";
 
   microbes = {};
   for (const auto& microbe : world.microbes) {
@@ -62,34 +78,34 @@ int main(int argc, char* argv[]) {
     areas.push_back({area.pos, area.radius});
   }
 
-  const auto& config = world.config;
-  const float size_x = config.x_max;
-  const float size_y = config.y_max;
+  sfml_config config;
 
-  sf::RenderWindow window(sf::VideoMode(size_x, size_y), "Genesis", sf::Style::Close | sf::Style::Resize);
-  window.setFramerateLimit(60);
+  sf::RenderWindow window(sf::VideoMode(config.win_x, config.win_y),
+      "Genesis", sf::Style::Close | sf::Style::Resize);
+
+  window.setFramerateLimit(config.fps);
 
   sf::View view_world;
   sf::View view_text;
 
-  view_world.setSize(size_x, size_y);
-  view_world.setCenter(view_world.getSize().x / 2, view_world.getSize().y / 2);
+  view_world.setCenter(config.win_x / 2, config.win_y / 2);
 
   sf::Vector2f pos_old;
   bool moving = false;
 
   sf::Font font;
-  std::string font_path = "./resources/fonts/Roboto-Regular.ttf";
-  if (!font.loadFromFile(font_path)) {
+  if (!font.loadFromFile(config.font_path)) {
     std::cerr << "ERROR: can not load font" << std::endl;
     return -1;
   }
 
-  std::thread thread_update([&stop, &world, &mutex_world](){
+  std::thread thread_update([&stop, &pause, &world, &mutex_world](){
     while (!stop) {
+      if (!pause && mutex_world.try_lock_for(std::chrono::milliseconds(1))) {
+        world.update();
+        mutex_world.unlock();
+      }
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
-      const std::lock_guard<std::timed_mutex> lock(mutex_world);
-      world.update();
     }
   });
 
@@ -107,6 +123,12 @@ int main(int argc, char* argv[]) {
             moving = true;
             pos_old = window.mapPixelToCoords(sf::Vector2i(event.mouseButton.x, event.mouseButton.y));
           }
+#if 0
+          std::cout << "window size " << window.getSize().x << " " << window.getSize().y << std::endl;
+          std::cout << "view_world size " << view_world.getSize().x << " " << view_world.getSize().y << std::endl;
+          std::cout << "view_text size  " << view_text.getSize().x << " " << view_text.getSize().y << std::endl;
+          std::cout << std::endl;
+#endif
           break;
 
         } case sf::Event::MouseButtonReleased: {
@@ -155,14 +177,26 @@ int main(int argc, char* argv[]) {
     }
 
     if (window.hasFocus()) {
+      if (sf::Keyboard::isKeyPressed(sf::Keyboard::Q)) {
+        window.close();
+      }
       if (sf::Keyboard::isKeyPressed(sf::Keyboard::U)) {
+        const std::lock_guard<std::timed_mutex> lock(mutex_world);
         world.save_data();
         world.load_config();
         world.load_data();
       }
+      if (sf::Keyboard::isKeyPressed(sf::Keyboard::H)) {
+        showing_help = !showing_help;
+      }
+      if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space)) {
+        pause = !pause;
+      }
     }
 
-    if (mutex_world.try_lock_for(std::chrono::milliseconds(100))) {
+    {
+      const std::lock_guard<std::timed_mutex> lock(mutex_world);
+
       areas = {};
       for (const auto& [_, area] : world.config.areas) {
         areas.push_back({area.pos, area.radius});
@@ -177,14 +211,14 @@ int main(int argc, char* argv[]) {
 
       const auto& stats = world.stats;
       stats_text = std::string{}
-        + " age: " + std::to_string(stats.age)
+        + " H - show help"
+        + (showing_help ? help_text : "") + "\n"
+        + "\n age: " + std::to_string(stats.age)
         + "\n microbes_count: " + std::to_string(stats.microbes_count)
         + "\n microbes_age_avg: " + std::to_string((uint64_t) stats.microbes_age_avg)
         + "\n time_update: " + std::to_string(stats.time_update)
         + "\n bpms: " + std::to_string(uint64_t (stats.microbes_count / std::max(1UL, stats.time_update)))
         + "";
-
-      mutex_world.unlock();
     }
 
     window.clear(sf::Color(240, 240, 240));

@@ -2,7 +2,7 @@
 all: console gui
 
 gui:
-	g++ -std=c++2a -o genesis src/genesis_gui.cpp \
+	g++ -std=c++2a -o genesis_gui src/genesis_gui.cpp \
 		-lsfml-graphics -lsfml-window -lsfml-system \
 		-lpthread \
 		-fconcepts -O2 -Wall -Wextra -Werror -pedantic
