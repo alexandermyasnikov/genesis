@@ -45,21 +45,18 @@
   "recipes": [
     {
       "available": true,
-      "in": {
-        "sunlight": 10
+      "in_out": {
+        "energy": 10,
+        "sunlight": -10
       },
-      "name": "sunlight_to_energy",
-      "out": {
-        "energy": 10
-      }
+      "name": "sunlight_to_energy"
     },
     {
       "available": true,
-      "in": {},
-      "name": "sunlight_extract",
-      "out": {
+      "in_out": {
         "sunlight": 10
-      }
+      },
+      "name": "sunlight_extract"
     }
   ],
   "resources": [

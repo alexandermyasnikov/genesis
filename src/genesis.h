@@ -158,13 +158,11 @@ namespace genesis_n {
   };
 
   struct recipe_json_t {
-    using in_t    = std::map<std::string/*name*/, int64_t/*count*/>;
-    using out_t   = std::map<std::string/*name*/, int64_t/*count*/>;
+    using in_out_t = std::map<std::string/*name*/, int64_t/*count*/>;
 
-    std::string   name              = {};
-    bool          available         = true;
-    in_t          in                = {};
-    out_t         out               = {};
+    std::string   name        = {};
+    bool          available   = true;
+    in_out_t      in_out      = {};
   };
 
   struct config_json_t {
@@ -220,13 +218,11 @@ namespace genesis_n {
   };
 
   struct recipe_t {
-    using in_t    = std::map<size_t/*ind*/, int64_t/*count*/>;
-    using out_t   = std::map<size_t/*ind*/, int64_t/*count*/>;
+    using in_out_t = std::map<size_t/*ind*/, int64_t/*count*/>;
 
-    std::string   name              = {};
-    bool          available         = true;
-    in_t          in                = {};
-    out_t         out               = {};
+    std::string   name        = {};
+    bool          available   = true;
+    in_out_t      in_out      = {};
 
     bool from_json(const recipe_json_t& recipe_json, const config_t& config);
     bool to_json(recipe_json_t& recipe_json, const config_t& config) const;
@@ -364,16 +360,14 @@ namespace genesis_n {
     TRACE_GENESIS;
     JSON_SAVE2(json, recipe_json, name);
     JSON_SAVE2(json, recipe_json, available);
-    JSON_SAVE2(json, recipe_json, in);
-    JSON_SAVE2(json, recipe_json, out);
+    JSON_SAVE2(json, recipe_json, in_out);
   }
 
   inline void from_json(const nlohmann::json& json, recipe_json_t& recipe_json) {
     TRACE_GENESIS;
     JSON_LOAD2(json, recipe_json, name);
     JSON_LOAD2(json, recipe_json, available);
-    JSON_LOAD2(json, recipe_json, in);
-    JSON_LOAD2(json, recipe_json, out);
+    JSON_LOAD2(json, recipe_json, in_out);
   }
 
   inline void to_json(nlohmann::json& json, const config_json_t& config_json) {
@@ -626,30 +620,19 @@ namespace genesis_n {
 
     available = recipe_json.available;
 
-    for (auto& [name, count] : recipe_json.in) {
+    for (auto& [name, count] : recipe_json.in_out) {
       auto it = std::find_if(config.resources.begin(), config.resources.end(),
           [&name](const auto& resource) { return name == resource.name; });
 
       if (it == config.resources.end()) {
-        LOG_GENESIS(ERROR, "invalid recipe_t::in %s", name.c_str());
+        LOG_GENESIS(ERROR, "invalid recipe_t::in_out %s", name.c_str());
         return false;
       }
-      in[std::distance(config.resources.begin(), it)] = count;
+      in_out[std::distance(config.resources.begin(), it)] = count;
     }
 
-    for (auto& [name, count] : recipe_json.out) {
-      auto it = std::find_if(config.resources.begin(), config.resources.end(),
-          [&name](const auto& resource) { return name == resource.name; });
-
-      if (it == config.resources.end()) {
-        LOG_GENESIS(ERROR, "invalid recipe_t::out %s", name.c_str());
-        return false;
-      }
-      out[std::distance(config.resources.begin(), it)] = count;
-    }
-
-    if (in.empty() && out.empty()) {
-      LOG_GENESIS(ERROR, "invalid recipe_t::in, out");
+    if (in_out.empty()) {
+      LOG_GENESIS(ERROR, "invalid recipe_t::in_out");
       return false;
     }
 
@@ -663,12 +646,8 @@ namespace genesis_n {
 
     recipe_json.available = available;
 
-    for (auto& [ind, count] : in) {
-      recipe_json.in[config.resources[ind].name] = count;
-    }
-
-    for (auto& [ind, count] : out) {
-      recipe_json.out[config.resources[ind].name] = count;
+    for (auto& [ind, count] : in_out) {
+      recipe_json.in_out[config.resources[ind].name] = count;
     }
 
     return true;
@@ -1101,21 +1080,19 @@ namespace genesis_n {
 
   bool world_t::update_mind_recipe(const recipe_t& recipe, microbe_t& microbe) {
     auto& resources = microbe.resources;
-    for (const auto& [ind, count] : recipe.in) {
-      if (resources[ind] < count) {
+    for (const auto& [ind, count] : recipe.in_out) {
+      const auto& resource_info = config.resources[ind];
+      auto count_n = resources[ind] + count;
+      if (count_n < 0 || count_n > resource_info.stack_size) {
         return false;
       }
     }
 
-    for (const auto& [ind, count] : recipe.in) {
-      resources[ind] -= count;
-    }
-
-    for (const auto& [ind, count] : recipe.out) {
+    for (const auto& [ind, count] : recipe.in_out) {
       const auto& resource_info = config.resources[ind];
       int64_t count_n = count;
 
-      if (resource_info.extractable) {
+      if (resource_info.extractable /*&& count > 0*/) {
         double multiplier = {};
         LOG_GENESIS(MIND, "ind %zd", ind);
         const auto& areas = config.areas[ind];
@@ -1130,7 +1107,9 @@ namespace genesis_n {
         LOG_GENESIS(MIND, "count_n %zd", count_n);
       }
 
-      resources[ind] = std::min(resource_info.stack_size, resources[ind] + count_n);
+      resources[ind] += count_n;
+      resources[ind] = std::max(resources[ind], 0L);
+      resources[ind] = std::min(resources[ind], resource_info.stack_size);
 
       LOG_GENESIS(MIND, "resource %zd", resources[ind]);
     }
