@@ -50,6 +50,7 @@ struct genesis_sfml_t {
   sf::View            view_world;
   sf::View            view_text;
   sf::Vector2f        pos_old;
+  sf::Vector2f        pos_mouse;
   bool                moving           = false;
   sf::Font            font;
 
@@ -118,6 +119,8 @@ struct genesis_sfml_t {
           break;
 
         } case sf::Event::MouseMoved: {
+          pos_mouse = window.mapPixelToCoords(sf::Vector2i(event.mouseMove.x, event.mouseMove.y));
+
           if (!moving)
             break;
 
@@ -203,6 +206,7 @@ struct genesis_sfml_t {
       + " H - show help"
       + (showing_help ? help_text : "") + "\n"
       + (pause ? "\n PAUSE" : "")
+      + "\n pos: " + std::to_string(int(pos_mouse.x)) + " " + std::to_string(int(pos_mouse.y))
       + "\n age: " + std::to_string(stats.age)
       + "\n microbes_count: " + std::to_string(stats.microbes_count)
       + "\n microbes_age_avg: " + std::to_string((uint64_t) stats.microbes_age_avg)
