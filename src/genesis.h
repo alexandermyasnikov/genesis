@@ -1069,6 +1069,45 @@ namespace genesis_n {
         }
         break;
 
+      } case 21: {
+        uint8_t opnd_dir;
+        utils_t::load_by_hash(opnd_dir, code, utils_t::hash_mix((seed ^ args) + 0));
+
+        uint16_t opnd_strength;
+        utils_t::load_by_hash(opnd_strength, code, utils_t::hash_mix((seed ^ args) + 1));
+
+        LOG_GENESIS(MIND, "ATTACK <%d> <%d>", opnd_dir, opnd_strength);
+
+        uint64_t direction = opnd_dir % utils_t::direction_max;
+        int64_t strength = opnd_strength % config.resources[utils_t::RES_ENERGY].stack_size;
+
+        auto pos_n = pos_next(microbe.pos, direction);
+        uint64_t ind = xy_pos_to_ind(pos_n);
+
+        if (microbe.pos != pos_n
+            && microbe.resources[utils_t::RES_ENERGY] > strength
+            && microbes[ind].alive)
+        {
+          LOG_GENESIS(MIND, "energy ok");
+          microbe.resources[utils_t::RES_ENERGY] -= strength;
+
+          auto& microbe_attacked = microbes[ind];
+          microbe_attacked.resources[utils_t::RES_ENERGY] -= strength;
+
+          if (microbe_attacked.resources[utils_t::RES_ENERGY] <= strength) {
+            for (auto& [ind, count] : microbe.resources) {
+              count += microbe_attacked.resources[ind];
+              count = std::max(count, 0L);
+              count = std::min(count, config.resources[ind].stack_size);
+            }
+            microbe_attacked = {};
+            microbe_attacked.alive = false;
+          } else {
+            microbe_attacked.resources[utils_t::RES_ENERGY] -= strength;
+          }
+        }
+        break;
+
       } default: {
         LOG_GENESIS(MIND, "NOTHING");
         break;
