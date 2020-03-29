@@ -5,28 +5,28 @@
       {
         "factor": 1.0,
         "pos": [
-          300,
-          500
-        ],
-        "radius": 50,
-        "sigma": 2.0
-      },
-      {
-        "factor": 1.0,
-        "pos": [
-          500,
-          300
-        ],
-        "radius": 250,
-        "sigma": 2.0
-      },
-      {
-        "factor": 1.0,
-        "pos": [
           200,
+          250
+        ],
+        "radius": 100,
+        "sigma": 2.0
+      },
+      {
+        "factor": 1.0,
+        "pos": [
+          250,
           200
         ],
-        "radius": 150,
+        "radius": 100,
+        "sigma": 2.0
+      },
+      {
+        "factor": 1.0,
+        "pos": [
+          150,
+          200
+        ],
+        "radius": 100,
         "sigma": 2.0
       }
     ]
@@ -42,7 +42,39 @@
   "energy_remaining": 5,
   "interval_save_world_ms": 600000,
   "interval_update_world_ms": 1,
+  "recipe_clone": "clone",
+  "recipe_init": "init",
+  "recipe_step": "step",
   "recipes": [
+    {
+      "available": false,
+      "in_out": {
+        "energy": 200
+      },
+      "name": "init"
+    },
+    {
+      "available": false,
+      "in_out": {
+        "energy": -1,
+        "organic": 1
+      },
+      "name": "step"
+    },
+    {
+      "available": false,
+      "in_out": {
+        "energy": -700
+      },
+      "name": "clone"
+    },
+    {
+      "available": true,
+      "in_out": {
+        "sunlight": 20
+      },
+      "name": "sunlight_extract"
+    },
     {
       "available": true,
       "in_out": {
@@ -54,9 +86,10 @@
     {
       "available": true,
       "in_out": {
-        "sunlight": 10
+        "energy": 5,
+        "organic": -10
       },
-      "name": "sunlight_extract"
+      "name": "organic_to_energy"
     }
   ],
   "resources": [
@@ -74,16 +107,21 @@
       "extractable": false,
       "name": "water",
       "stack_size": 1000
+    },
+    {
+      "extractable": false,
+      "name": "organic",
+      "stack_size": 1000
     }
   ],
   "seed": 0,
-  "spawn_max_count": 501,
-  "spawn_min_count": 500,
+  "spawn_max_count": 1001,
+  "spawn_min_count": 1000,
   "spawn_pos": [
     200,
     200
   ],
-  "spawn_radius": 50,
-  "x_max": 600,
-  "y_max": 600
+  "spawn_radius": 200,
+  "x_max": 400,
+  "y_max": 400
 }
