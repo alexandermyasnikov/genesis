@@ -1035,11 +1035,12 @@ namespace genesis_n {
         LOG_GENESIS(MIND, "energy %zd", microbe.resources[utils_t::RES_ENERGY]);
         auto pos_n = pos_next(microbe.pos, direction);
         uint64_t ind = xy_pos_to_ind(pos_n);
-        if (microbe.resources[utils_t::RES_ENERGY]
-            > 0.6 * config.resources[utils_t::RES_ENERGY].stack_size
+        auto count_need = 0.6 * config.resources[utils_t::RES_ENERGY].stack_size;
+        if (microbe.resources[utils_t::RES_ENERGY] > count_need
             && !microbes[ind].alive)
         {
           LOG_GENESIS(MIND, "energy ok");
+          microbe.resources[utils_t::RES_ENERGY] -= count_need;
           for (auto& [_, count] : microbe.resources) {
             count /= 2;
           }
@@ -1177,6 +1178,7 @@ namespace genesis_n {
 
     config_json_t config_json = json;
 
+    config = {};
     if (!config.from_json(config_json)) {
       LOG_GENESIS(ERROR, "invalid config");
       throw std::runtime_error("invalid config");
