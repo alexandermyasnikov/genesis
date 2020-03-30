@@ -179,6 +179,7 @@ namespace genesis_n {
     uint64_t      energy_remaining            = 10;
     uint64_t      interval_update_world_ms    = 100;
     uint64_t      interval_save_world_ms      = 60 * 1000;
+    double        mutation_probability        = 1.;
     uint64_t      seed                        = {};
     debug_t       debug                       = { utils_t::ERROR };
     resources_t   resources                   = {};
@@ -246,6 +247,7 @@ namespace genesis_n {
     uint64_t      energy_remaining;
     uint64_t      interval_update_world_ms;
     uint64_t      interval_save_world_ms;
+    double        mutation_probability;
     uint64_t      seed;
     debug_t       debug;
     resources_t   resources;
@@ -385,6 +387,7 @@ namespace genesis_n {
     JSON_SAVE2(json, config_json, energy_remaining);
     JSON_SAVE2(json, config_json, interval_update_world_ms);
     JSON_SAVE2(json, config_json, interval_save_world_ms);
+    JSON_SAVE2(json, config_json, mutation_probability);
     JSON_SAVE2(json, config_json, seed);
     JSON_SAVE2(json, config_json, debug);
     JSON_SAVE2(json, config_json, resources);
@@ -408,6 +411,7 @@ namespace genesis_n {
     JSON_LOAD2(json, config_json, energy_remaining);
     JSON_LOAD2(json, config_json, interval_update_world_ms);
     JSON_LOAD2(json, config_json, interval_save_world_ms);
+    JSON_LOAD2(json, config_json, mutation_probability);
     JSON_LOAD2(json, config_json, seed);
     JSON_LOAD2(json, config_json, debug);
     JSON_LOAD2(json, config_json, resources);
@@ -692,6 +696,12 @@ namespace genesis_n {
 
     interval_save_world_ms = config_json.interval_save_world_ms;
 
+    mutation_probability = config_json.mutation_probability;
+    if (mutation_probability < 0) {
+      LOG_GENESIS(ERROR, "invalid config_t::mutation_probability %f", mutation_probability);
+      return false;
+    }
+
     seed = config_json.seed;
 
     debug = config_json.debug;
@@ -797,6 +807,7 @@ namespace genesis_n {
     config_json.energy_remaining           = energy_remaining;
     config_json.interval_update_world_ms   = interval_update_world_ms;
     config_json.interval_save_world_ms     = interval_save_world_ms;
+    config_json.mutation_probability       = mutation_probability;
     config_json.seed                       = seed;
     config_json.debug                      = debug;
     config_json.resources                  = resources;
@@ -1066,7 +1077,7 @@ namespace genesis_n {
         LOG_GENESIS(MIND, "CLONE <%d> <%d>", opnd_dir, opnd_probability);
 
         uint64_t direction = opnd_dir % utils_t::direction_max;
-        double probability = 0.1 * opnd_probability / 0xFFFF / code.size();
+        double probability = config.mutation_probability * opnd_probability / 0xFFFF / code.size();
 
         auto pos_n = pos_next(microbe.pos, direction);
         uint64_t ind = xy_pos_to_ind(pos_n);
