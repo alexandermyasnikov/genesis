@@ -81,7 +81,7 @@ struct genesis_sfml_t {
     world.init();
 
     window.create(sf::VideoMode(config.win_x, config.win_y),
-        "Genesis", sf::Style::Close | sf::Style::Resize);
+        "Genesis   amyasnikov.pro", sf::Style::Close | sf::Style::Resize);
 
     window.setFramerateLimit(config.fps);
 
@@ -302,7 +302,7 @@ struct genesis_sfml_t {
       sf::Color color;
       switch (mode) {
         case MODE_AGE: {
-          double ratio = 255. * microbe.age / world.config.age_max;
+          double ratio = 255. * microbe.age / (world.config.age + world.config.age_delta);
           color = sf::Color(255, ratio, 0, 255);
           break;
         } case MODE_RESOURCE: {

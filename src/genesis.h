@@ -175,7 +175,8 @@ namespace genesis_n {
     uint64_t      x_max                       = 1000;
     uint64_t      y_max                       = 1000;
     uint64_t      code_size                   = 32;
-    uint64_t      age_max                     = 10000;
+    uint64_t      age                         = 1000;
+    uint64_t      age_delta                   = 100;
     uint64_t      energy_remaining            = 10;
     uint64_t      interval_update_world_ms    = 100;
     uint64_t      interval_save_world_ms      = 60 * 1000;
@@ -213,7 +214,7 @@ namespace genesis_n {
     code_t        code;
     resources_t   resources;
     xy_pos_t      pos;
-    uint64_t      age;
+    int64_t       age;
     uint64_t      direction;
     int64_t       energy_remaining;
 
@@ -243,7 +244,8 @@ namespace genesis_n {
     uint64_t      y_max;
     uint64_t      code_size;
     uint64_t      health_max;
-    uint64_t      age_max;
+    uint64_t      age;
+    uint64_t      age_delta;
     uint64_t      energy_remaining;
     uint64_t      interval_update_world_ms;
     uint64_t      interval_save_world_ms;
@@ -383,7 +385,8 @@ namespace genesis_n {
     JSON_SAVE2(json, config_json, x_max);
     JSON_SAVE2(json, config_json, y_max);
     JSON_SAVE2(json, config_json, code_size);
-    JSON_SAVE2(json, config_json, age_max);
+    JSON_SAVE2(json, config_json, age);
+    JSON_SAVE2(json, config_json, age_delta);
     JSON_SAVE2(json, config_json, energy_remaining);
     JSON_SAVE2(json, config_json, interval_update_world_ms);
     JSON_SAVE2(json, config_json, interval_save_world_ms);
@@ -407,7 +410,8 @@ namespace genesis_n {
     JSON_LOAD2(json, config_json, x_max);
     JSON_LOAD2(json, config_json, y_max);
     JSON_LOAD2(json, config_json, code_size);
-    JSON_LOAD2(json, config_json, age_max);
+    JSON_LOAD2(json, config_json, age);
+    JSON_LOAD2(json, config_json, age_delta);
     JSON_LOAD2(json, config_json, energy_remaining);
     JSON_LOAD2(json, config_json, interval_update_world_ms);
     JSON_LOAD2(json, config_json, interval_save_world_ms);
@@ -614,7 +618,7 @@ namespace genesis_n {
     // code
     resources          = {};
     pos                = {utils_t::rand_u64() % config.x_max, utils_t::rand_u64() % config.y_max};
-    age                = {};
+    age                = config.age + utils_t::rand_u64() % config.age_delta - 0.5 * config.age_delta;
     direction          = utils_t::rand_u64() % utils_t::direction_max;
     energy_remaining   = {};
   }
@@ -688,7 +692,9 @@ namespace genesis_n {
       return false;
     }
 
-    age_max = config_json.age_max;
+    age = config_json.age;
+
+    age_delta = config_json.age_delta;
 
     energy_remaining = config_json.energy_remaining;
 
@@ -803,7 +809,8 @@ namespace genesis_n {
     config_json.x_max                      = x_max;
     config_json.y_max                      = y_max;
     config_json.code_size                  = code_size;
-    config_json.age_max                    = age_max;
+    config_json.age                        = age;
+    config_json.age_delta                  = age_delta;
     config_json.energy_remaining           = energy_remaining;
     config_json.interval_update_world_ms   = interval_update_world_ms;
     config_json.interval_save_world_ms     = interval_save_world_ms;
@@ -887,9 +894,7 @@ namespace genesis_n {
         }
       }
 
-      if (microbe.age >= config.age_max
-          || microbe.resources[utils_t::RES_ENERGY] <= 0)
-      {
+      if (microbe.age <= 0 || microbe.resources[utils_t::RES_ENERGY] <= 0) {
         microbe = {};
         microbe.alive = false;
         continue;
@@ -897,7 +902,7 @@ namespace genesis_n {
 
       update_mind_recipe(config.recipes[config.recipe_step], microbe);
 
-      microbe.age++;
+      microbe.age--;
       stats.microbes_count++;
       stats.microbes_age_avg += microbe.age;
     }
@@ -1071,13 +1076,10 @@ namespace genesis_n {
         uint8_t opnd_dir;
         utils_t::load_by_hash(opnd_dir, code, utils_t::hash_mix((seed ^ args) + 0));
 
-        uint16_t opnd_probability;
-        utils_t::load_by_hash(opnd_probability, code, utils_t::hash_mix((seed ^ args) + 1));
-
-        LOG_GENESIS(MIND, "CLONE <%d> <%d>", opnd_dir, opnd_probability);
+        LOG_GENESIS(MIND, "CLONE <%d> <%d>", opnd_dir);
 
         uint64_t direction = opnd_dir % utils_t::direction_max;
-        double probability = config.mutation_probability * opnd_probability / 0xFFFF / code.size();
+        double probability = config.mutation_probability * 0xFFFF / code.size();
 
         auto pos_n = pos_next(microbe.pos, direction);
         uint64_t ind = xy_pos_to_ind(pos_n);
@@ -1137,17 +1139,15 @@ namespace genesis_n {
           microbe.resources[utils_t::RES_ENERGY] -= strength;
 
           auto& microbe_attacked = microbes[ind];
-          microbe_attacked.resources[utils_t::RES_ENERGY] -= strength;
 
           if (microbe_attacked.resources[utils_t::RES_ENERGY] <= strength) {
-            for (auto& [ind, count] : microbe_attacked.resources) {
+            for (const auto& [ind, count] : microbe_attacked.resources) {
               auto& resource = microbe.resources[ind];
               resource += count;
               resource = std::max(resource, 0L);
               resource = std::min(resource, config.resources[ind].stack_size);
             }
             microbe_attacked = {};
-            microbe_attacked.alive = false;
           } else {
             microbe_attacked.resources[utils_t::RES_ENERGY] -= strength;
           }
