@@ -23,12 +23,32 @@ struct sfml_config_t {
 
 
 struct genesis_sfml_t {
+  enum mode_t : uint64_t {
+    MODE_NORMAL,
+    MODE_AGE,
+    MODE_RESOURCE,
+    MODE_FAMILY,
+    MODE_COUNT,
+  };
+
+  struct microbe_t {
+    using resources_t   = std::map<size_t/*ind*/, int64_t/*count*/>;
+    using xy_pos_t      = utils_t::xy_pos_t;
+
+    bool          alive;
+    uint64_t      family;
+    resources_t   resources;
+    xy_pos_t      pos;
+    uint64_t      age;
+    uint64_t      direction;
+  };
+
   struct area_pos_t {
     utils_t::xy_pos_t pos;
     uint64_t r;
   };
 
-  using microbes_t = std::deque<utils_t::xy_pos_t>;
+  using microbes_t = std::deque<microbe_t>;
   using areas_t    = std::deque<area_pos_t>;
 
   sfml_config_t       config           = {};
@@ -50,14 +70,18 @@ struct genesis_sfml_t {
   sf::View            view_world;
   sf::View            view_text;
   sf::Vector2f        pos_old;
+  sf::Vector2f        pos_mouse;
   bool                moving           = false;
   sf::Font            font;
+
+  uint64_t            mode             = MODE_NORMAL;
+  uint64_t            mode_param       = {};
 
   void init() {
     world.init();
 
     window.create(sf::VideoMode(config.win_x, config.win_y),
-        "Genesis", sf::Style::Close | sf::Style::Resize);
+        "Genesis   amyasnikov.pro", sf::Style::Close | sf::Style::Resize);
 
     window.setFramerateLimit(config.fps);
 
@@ -79,8 +103,6 @@ struct genesis_sfml_t {
   void loop() {
     while (window.isOpen()) {
       check_events();
-      check_keys();
-
       get_data();
       draw_data();
     }
@@ -118,6 +140,8 @@ struct genesis_sfml_t {
           break;
 
         } case sf::Event::MouseMoved: {
+          pos_mouse = window.mapPixelToCoords(sf::Vector2i(event.mouseMove.x, event.mouseMove.y));
+
           if (!moving)
             break;
 
@@ -150,29 +174,46 @@ struct genesis_sfml_t {
           view_text.setCenter(window.getSize().x / 2, window.getSize().y / 2);
           view_text.setSize(window.getSize().x, window.getSize().x / aspect_ratio);
           break;
+
+        } case sf::Event::KeyReleased: {
+          switch (event.key.code) {
+            case sf::Keyboard::Q: {
+              window.close();
+              break;
+
+            } case sf::Keyboard::U: {
+              const std::lock_guard<std::timed_mutex> lock(mutex_world);
+              world.save_data();
+              world.load_config();
+              world.load_data();
+              break;
+
+            } case sf::Keyboard::H: {
+              showing_help = !showing_help;
+              break;
+
+            } case sf::Keyboard::Space: {
+              pause = !pause;
+              break;
+
+            } case sf::Keyboard::P: {
+              mode_param++;
+              break;
+
+            } case sf::Keyboard::M: {
+              mode++;
+              if (mode == MODE_COUNT) {
+                mode = {};
+              }
+              break;
+
+            }
+            default: break;
+          }
+          break;
         }
 
         default: break;
-      }
-    }
-  }
-
-  void check_keys() {
-    if (window.hasFocus()) {
-      if (sf::Keyboard::isKeyPressed(sf::Keyboard::Q)) {
-        window.close();
-      }
-      if (sf::Keyboard::isKeyPressed(sf::Keyboard::U)) {
-        const std::lock_guard<std::timed_mutex> lock(mutex_world);
-        world.save_data();
-        world.load_config();
-        world.load_data();
-      }
-      if (sf::Keyboard::isKeyPressed(sf::Keyboard::H)) {
-        showing_help = !showing_help;
-      }
-      if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space)) {
-        pause = !pause;
       }
     }
   }
@@ -188,21 +229,42 @@ struct genesis_sfml_t {
     }
 
     microbes = {};
-    for (const auto& microbe : world.microbes) {
-      if (microbe.alive) {
-        microbes.push_back({microbe.pos});
+    for (size_t i{}; i < world.microbes.size(); ++i) {
+      if (world.microbes[i].alive) {
+        microbes.push_back({});
+        auto& microbe = microbes.back();
+        microbe.alive       = world.microbes[i].alive;
+        microbe.family      = world.microbes[i].family;
+        microbe.resources   = world.microbes[i].resources;
+        microbe.pos         = world.microbes[i].pos;
+        microbe.age         = world.microbes[i].age;
+        microbe.direction   = world.microbes[i].direction;
       }
     }
 
     static std::string help_text =
       "\n U - reload config"
+      "\n M - change mode"
+      "\n P - change mode_param"
       "\n Q - quit";
+
+    std::string mode_text{};
+    switch (mode) {
+      case MODE_NORMAL:   mode_text = "normal"; break;
+      case MODE_AGE:      mode_text = "age"; break;
+      case MODE_RESOURCE: mode_text = "resource "
+                              + world.config.resources[mode_param % world.config.resources.size()].name; break;
+      case MODE_FAMILY:   mode_text = "family"; break;
+      default:            mode_text = "unknown"; break;
+    }
 
     const auto& stats = world.stats;
     stats_text = std::string{}
       + " H - show help"
       + (showing_help ? help_text : "") + "\n"
       + (pause ? "\n PAUSE" : "")
+      + "\n mode: " + mode_text
+      + "\n pos: " + std::to_string(int(pos_mouse.x)) + "\t" + std::to_string(int(pos_mouse.y))
       + "\n age: " + std::to_string(stats.age)
       + "\n microbes_count: " + std::to_string(stats.microbes_count)
       + "\n microbes_age_avg: " + std::to_string((uint64_t) stats.microbes_age_avg)
@@ -233,11 +295,27 @@ struct genesis_sfml_t {
       window.draw(circle);
     }
 
-    for (const auto& microbe : microbes) {
+    for (auto& microbe : microbes) {
       sf::RectangleShape rectangle;
       rectangle.setSize(sf::Vector2f(1, 1));
-      rectangle.setPosition(sf::Vector2f(microbe.first, microbe.second));
-      rectangle.setFillColor(sf::Color(config.color_microbe));
+      rectangle.setPosition(sf::Vector2f(microbe.pos.first, microbe.pos.second));
+      sf::Color color;
+      switch (mode) {
+        case MODE_AGE: {
+          double ratio = 255. * microbe.age / (world.config.age + world.config.age_delta);
+          color = sf::Color(255, ratio, 0, 255);
+          break;
+        } case MODE_RESOURCE: {
+          mode_param %= world.config.resources.size();
+          double ratio = 255. * microbe.resources[mode_param] / world.config.resources[mode_param].stack_size;
+          color = sf::Color(255, ratio, 0, 255);
+          break;
+        } case MODE_FAMILY: {
+          color = sf::Color(microbe.family, microbe.family >> 8, microbe.family >> 16, 255);
+          break;
+        } default:       color = sf::Color(config.color_microbe);
+      }
+      rectangle.setFillColor(color);
       window.draw(rectangle);
     }
 

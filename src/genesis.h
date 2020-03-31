@@ -175,14 +175,19 @@ namespace genesis_n {
     uint64_t      x_max                       = 1000;
     uint64_t      y_max                       = 1000;
     uint64_t      code_size                   = 32;
-    uint64_t      age_max                     = 10000;
+    uint64_t      age                         = 1000;
+    uint64_t      age_delta                   = 100;
     uint64_t      energy_remaining            = 10;
     uint64_t      interval_update_world_ms    = 100;
     uint64_t      interval_save_world_ms      = 60 * 1000;
+    double        mutation_probability        = 1.;
     uint64_t      seed                        = {};
     debug_t       debug                       = { utils_t::ERROR };
     resources_t   resources                   = {};
     areas_t       areas                       = {};
+    std::string   recipe_init                 = {};
+    std::string   recipe_step                 = {};
+    std::string   recipe_clone                = {};
     recipes_t     recipes                     = {};
     xy_pos_t      spawn_pos                   = {};
     uint64_t      spawn_radius                = {};
@@ -209,7 +214,7 @@ namespace genesis_n {
     code_t        code;
     resources_t   resources;
     xy_pos_t      pos;
-    uint64_t      age;
+    int64_t       age;
     uint64_t      direction;
     int64_t       energy_remaining;
 
@@ -239,14 +244,19 @@ namespace genesis_n {
     uint64_t      y_max;
     uint64_t      code_size;
     uint64_t      health_max;
-    uint64_t      age_max;
+    uint64_t      age;
+    uint64_t      age_delta;
     uint64_t      energy_remaining;
     uint64_t      interval_update_world_ms;
     uint64_t      interval_save_world_ms;
+    double        mutation_probability;
     uint64_t      seed;
     debug_t       debug;
     resources_t   resources;
     areas_t       areas;
+    uint64_t      recipe_init;
+    uint64_t      recipe_step;
+    uint64_t      recipe_clone;
     recipes_t     recipes;
     xy_pos_t      spawn_pos;
     uint64_t      spawn_radius;
@@ -375,14 +385,19 @@ namespace genesis_n {
     JSON_SAVE2(json, config_json, x_max);
     JSON_SAVE2(json, config_json, y_max);
     JSON_SAVE2(json, config_json, code_size);
-    JSON_SAVE2(json, config_json, age_max);
+    JSON_SAVE2(json, config_json, age);
+    JSON_SAVE2(json, config_json, age_delta);
     JSON_SAVE2(json, config_json, energy_remaining);
     JSON_SAVE2(json, config_json, interval_update_world_ms);
     JSON_SAVE2(json, config_json, interval_save_world_ms);
+    JSON_SAVE2(json, config_json, mutation_probability);
     JSON_SAVE2(json, config_json, seed);
     JSON_SAVE2(json, config_json, debug);
     JSON_SAVE2(json, config_json, resources);
     JSON_SAVE2(json, config_json, areas);
+    JSON_SAVE2(json, config_json, recipe_init);
+    JSON_SAVE2(json, config_json, recipe_step);
+    JSON_SAVE2(json, config_json, recipe_clone);
     JSON_SAVE2(json, config_json, recipes);
     JSON_SAVE2(json, config_json, spawn_pos);
     JSON_SAVE2(json, config_json, spawn_radius);
@@ -395,14 +410,19 @@ namespace genesis_n {
     JSON_LOAD2(json, config_json, x_max);
     JSON_LOAD2(json, config_json, y_max);
     JSON_LOAD2(json, config_json, code_size);
-    JSON_LOAD2(json, config_json, age_max);
+    JSON_LOAD2(json, config_json, age);
+    JSON_LOAD2(json, config_json, age_delta);
     JSON_LOAD2(json, config_json, energy_remaining);
     JSON_LOAD2(json, config_json, interval_update_world_ms);
     JSON_LOAD2(json, config_json, interval_save_world_ms);
+    JSON_LOAD2(json, config_json, mutation_probability);
     JSON_LOAD2(json, config_json, seed);
     JSON_LOAD2(json, config_json, debug);
     JSON_LOAD2(json, config_json, resources);
     JSON_LOAD2(json, config_json, areas);
+    JSON_LOAD2(json, config_json, recipe_init);
+    JSON_LOAD2(json, config_json, recipe_step);
+    JSON_LOAD2(json, config_json, recipe_clone);
     JSON_LOAD2(json, config_json, recipes);
     JSON_LOAD2(json, config_json, spawn_pos);
     JSON_LOAD2(json, config_json, spawn_radius);
@@ -598,13 +618,9 @@ namespace genesis_n {
     // code
     resources          = {};
     pos                = {utils_t::rand_u64() % config.x_max, utils_t::rand_u64() % config.y_max};
-    age                = {};
+    age                = config.age + utils_t::rand_u64() % config.age_delta - 0.5 * config.age_delta;
     direction          = utils_t::rand_u64() % utils_t::direction_max;
     energy_remaining   = {};
-
-    if (resources[utils_t::RES_ENERGY] <= 0) {
-      resources[utils_t::RES_ENERGY] = config.resources[utils_t::RES_ENERGY].stack_size / 2;
-    }
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -676,13 +692,21 @@ namespace genesis_n {
       return false;
     }
 
-    age_max = config_json.age_max;
+    age = config_json.age;
+
+    age_delta = config_json.age_delta;
 
     energy_remaining = config_json.energy_remaining;
 
     interval_update_world_ms = config_json.interval_update_world_ms;
 
     interval_save_world_ms = config_json.interval_save_world_ms;
+
+    mutation_probability = config_json.mutation_probability;
+    if (mutation_probability < 0) {
+      LOG_GENESIS(ERROR, "invalid config_t::mutation_probability %f", mutation_probability);
+      return false;
+    }
 
     seed = config_json.seed;
 
@@ -730,6 +754,32 @@ namespace genesis_n {
       return false;
     }
 
+    auto get_recipe_ind = [this](const std::string& name, uint64_t& ind) -> bool {
+      auto it = std::find_if(recipes.begin(), recipes.end(),
+          [&name](const auto& recipe) { return name == recipe.name; });
+      if (it == recipes.end()) {
+        LOG_GENESIS(ERROR, "invalid config_t::recipe %s", name.c_str());
+        return false;
+      }
+      ind = std::distance(recipes.begin(), it);
+      return true;
+    };
+
+    if (!get_recipe_ind(config_json.recipe_init, recipe_init)) {
+      LOG_GENESIS(ERROR, "invalid config_t::recipe_init");
+      return false;
+    }
+
+    if (!get_recipe_ind(config_json.recipe_step, recipe_step)) {
+      LOG_GENESIS(ERROR, "invalid config_t::recipe_step");
+      return false;
+    }
+
+    if (!get_recipe_ind(config_json.recipe_clone, recipe_clone)) {
+      LOG_GENESIS(ERROR, "invalid config_t::recipe_clone");
+      return false;
+    }
+
     spawn_pos = config_json.spawn_pos;
     if (spawn_pos.first >= x_max || spawn_pos.second >= y_max) {
       LOG_GENESIS(ERROR, "invalid config_t::spawn_pos");
@@ -759,20 +809,23 @@ namespace genesis_n {
     config_json.x_max                      = x_max;
     config_json.y_max                      = y_max;
     config_json.code_size                  = code_size;
-    config_json.age_max                    = age_max;
+    config_json.age                        = age;
+    config_json.age_delta                  = age_delta;
     config_json.energy_remaining           = energy_remaining;
     config_json.interval_update_world_ms   = interval_update_world_ms;
     config_json.interval_save_world_ms     = interval_save_world_ms;
+    config_json.mutation_probability       = mutation_probability;
     config_json.seed                       = seed;
     config_json.debug                      = debug;
     config_json.resources                  = resources;
-
     for (size_t ind{}; ind < areas.size(); ++ind) {
       for (const auto& area : areas[ind]) {
         config_json.areas[resources[ind].name].push_back(area);
       }
     }
-
+    config_json.recipe_init  = recipes[recipe_init].name;
+    config_json.recipe_step  = recipes[recipe_step].name;
+    config_json.recipe_clone = recipes[recipe_clone].name;
     config_json.recipes.assign(recipes.size(), {});
     for (size_t i{}; i < recipes.size(); ++i) {
       recipes[i].to_json(config_json.recipes[i], *this);
@@ -841,17 +894,15 @@ namespace genesis_n {
         }
       }
 
-      if (microbe.age >= config.age_max
-          || microbe.resources[utils_t::RES_ENERGY] <= 0)
-      {
+      if (microbe.age <= 0 || microbe.resources[utils_t::RES_ENERGY] <= 0) {
         microbe = {};
         microbe.alive = false;
         continue;
       }
 
-      microbe.age++;
-      microbe.resources[utils_t::RES_ENERGY]--;
+      update_mind_recipe(config.recipes[config.recipe_step], microbe);
 
+      microbe.age--;
       stats.microbes_count++;
       stats.microbes_age_avg += microbe.age;
     }
@@ -862,9 +913,10 @@ namespace genesis_n {
         while (count < config.spawn_max_count) {
           microbe_t microbe;
           microbe.init(config);
+          update_mind_recipe(config.recipes[config.recipe_init], microbe);
           microbe.pos = config.spawn_pos;
-          microbe.pos.first  += 2 * utils_t::rand_u64() % config.spawn_radius - config.spawn_radius;
-          microbe.pos.second += 2 * utils_t::rand_u64() % config.spawn_radius - config.spawn_radius;
+          microbe.pos.first  += utils_t::rand_u64() % config.spawn_radius - 0.5 * config.spawn_radius;
+          microbe.pos.second += utils_t::rand_u64() % config.spawn_radius - 0.5 * config.spawn_radius;
           uint64_t ind = xy_pos_to_ind(microbe.pos);
           if (microbe.validation(config) && !microbes[ind].alive) {
             microbes[ind] = std::move(microbe);
@@ -1024,31 +1076,26 @@ namespace genesis_n {
         uint8_t opnd_dir;
         utils_t::load_by_hash(opnd_dir, code, utils_t::hash_mix((seed ^ args) + 0));
 
-        uint16_t opnd_probability;
-        utils_t::load_by_hash(opnd_probability, code, utils_t::hash_mix((seed ^ args) + 1));
-
-        LOG_GENESIS(MIND, "CLONE <%d> <%d>", opnd_dir, opnd_probability);
+        LOG_GENESIS(MIND, "CLONE <%d> <%d>", opnd_dir);
 
         uint64_t direction = opnd_dir % utils_t::direction_max;
-        double probability = 0.1 * opnd_probability / 0xFFFF / code.size();
+        double probability = config.mutation_probability * 0xFFFF / code.size();
 
-        LOG_GENESIS(MIND, "energy %zd", microbe.resources[utils_t::RES_ENERGY]);
         auto pos_n = pos_next(microbe.pos, direction);
         uint64_t ind = xy_pos_to_ind(pos_n);
-        if (microbe.resources[utils_t::RES_ENERGY]
-            > 0.6 * config.resources[utils_t::RES_ENERGY].stack_size
-            && !microbes[ind].alive)
+        if (!microbes[ind].alive
+            && update_mind_recipe(config.recipes[config.recipe_clone], microbe))
         {
-          LOG_GENESIS(MIND, "energy ok");
-          for (auto& [_, count] : microbe.resources) {
-            count /= 2;
-          }
-          auto microbe_child = microbe;
+          microbe_t microbe_child = {};
           microbe_child.init(config);
-          microbe_child.pos = pos_n;
+          microbe_child.code   = microbe.code;
+          microbe_child.pos    = pos_n;
+          microbe_child.family = microbe.family;
+          update_mind_recipe(config.recipes[config.recipe_init], microbe_child);
           for (auto& byte : microbe_child.code) {
             if (utils_t::rand_u64() % 0xFFFF < probability) {
               byte = utils_t::rand_u64();
+              microbe_child.family = utils_t::rand_u64();
             }
           }
           if (microbe_child.validation(config)) {
@@ -1066,6 +1113,44 @@ namespace genesis_n {
         const auto recipe = config.recipes[opnd_recipe % config.recipes.size()];
         if (recipe.available) {
           update_mind_recipe(config.recipes[opnd_recipe % config.recipes.size()], microbe);
+        }
+        break;
+
+      } case 21: {
+        uint8_t opnd_dir;
+        utils_t::load_by_hash(opnd_dir, code, utils_t::hash_mix((seed ^ args) + 0));
+
+        uint16_t opnd_strength;
+        utils_t::load_by_hash(opnd_strength, code, utils_t::hash_mix((seed ^ args) + 1));
+
+        LOG_GENESIS(MIND, "ATTACK <%d> <%d>", opnd_dir, opnd_strength);
+
+        uint64_t direction = opnd_dir % utils_t::direction_max;
+        int64_t strength = opnd_strength % config.resources[utils_t::RES_ENERGY].stack_size;
+
+        auto pos_n = pos_next(microbe.pos, direction);
+        uint64_t ind = xy_pos_to_ind(pos_n);
+
+        if (microbe.pos != pos_n
+            && microbe.resources[utils_t::RES_ENERGY] > strength
+            && microbes[ind].alive)
+        {
+          LOG_GENESIS(MIND, "energy ok");
+          microbe.resources[utils_t::RES_ENERGY] -= strength;
+
+          auto& microbe_attacked = microbes[ind];
+
+          if (microbe_attacked.resources[utils_t::RES_ENERGY] <= strength) {
+            for (const auto& [ind, count] : microbe_attacked.resources) {
+              auto& resource = microbe.resources[ind];
+              resource += count;
+              resource = std::max(resource, 0L);
+              resource = std::min(resource, config.resources[ind].stack_size);
+            }
+            microbe_attacked = {};
+          } else {
+            microbe_attacked.resources[utils_t::RES_ENERGY] -= strength;
+          }
         }
         break;
 
@@ -1092,7 +1177,7 @@ namespace genesis_n {
       const auto& resource_info = config.resources[ind];
       int64_t count_n = count;
 
-      if (resource_info.extractable /*&& count > 0*/) {
+      if (resource_info.extractable && count > 0) {
         double multiplier = {};
         LOG_GENESIS(MIND, "ind %zd", ind);
         const auto& areas = config.areas[ind];
@@ -1107,11 +1192,12 @@ namespace genesis_n {
         LOG_GENESIS(MIND, "count_n %zd", count_n);
       }
 
-      resources[ind] += count_n;
-      resources[ind] = std::max(resources[ind], 0L);
-      resources[ind] = std::min(resources[ind], resource_info.stack_size);
+      auto& resource = resources[ind];
+      resource += count_n;
+      resource = std::max(resource, 0L);
+      resource = std::min(resource, resource_info.stack_size);
 
-      LOG_GENESIS(MIND, "resource %zd", resources[ind]);
+      LOG_GENESIS(MIND, "resource %zd", resource);
     }
 
     return true;
@@ -1138,6 +1224,7 @@ namespace genesis_n {
 
     config_json_t config_json = json;
 
+    config = {};
     if (!config.from_json(config_json)) {
       LOG_GENESIS(ERROR, "invalid config");
       throw std::runtime_error("invalid config");
