@@ -19,18 +19,20 @@
 
 
 
-#define PRODUCTION 1
-#define VALGRIND 0
+// #define PRODUCTION
+// #define VALGRIND
 
 #define JSON_SAVE(json, name)   json[#name] = name
 #define JSON_LOAD(json, name)   name = json.value(#name, name)
 
-#define JSON_SAVE2(json, s, name)   json[#name] = s.name
-#define JSON_LOAD2(json, s, name)   s.name = json.value(#name, s.name)
+#define JSON_SAVE2(json, s, name)                  json[#name] = s.name
+#define JSON_LOAD2(json, s, name)                  s.name = json.value(#name, s.name)
+
+#define JSON_LOAD3(json, s, name, default_value)   s.name = json.value(#name, default_value)
 
 #define SAFE_INDEX(cont, ind)   cont[(ind) % cont.size()]
 
-#if PRODUCTION
+#ifdef PRODUCTION
   #define TRACE_GENESIS
   #define LOG_GENESIS(name, ...)
 #else
@@ -49,7 +51,7 @@
 
 using namespace std::chrono_literals;
 
-struct logger_indent_genesis_t   : debug_logger_n::indent_t<logger_indent_genesis_t> { };
+struct logger_indent_genesis_t : debug_logger_n::indent_t<logger_indent_genesis_t> { };
 
 
 
@@ -59,14 +61,6 @@ namespace genesis_n {
 
   struct utils_t {
     using xy_pos_t = std::pair<uint64_t, uint64_t>;
-
-    struct xy_pos_hash_t {
-      uint64_t operator()(const xy_pos_t& pos) const {
-        auto hash1 = std::hash<uint64_t>{}(pos.first);
-        auto hash2 = std::hash<uint64_t>{}(pos.second);
-        return (hash1 << 32) + (hash1 >> 32) + hash2;
-      }
-    };
 
     inline static std::string TMP_SUFFIX       = ".tmp";
     inline static std::string TRACE            = "trace";
@@ -88,37 +82,25 @@ namespace genesis_n {
     inline static uint64_t npos                = std::string::npos;
     inline static uint64_t direction_max       = 9;
     inline static uint64_t CODE_RIP2B          = 0;
-    inline static uint64_t CODE_SEED           = 2;
-    inline static uint64_t CODE_SIZE_MIN       = 10;
+    inline static uint64_t REGS_SIZE_MIN       = 10;
     inline static uint64_t RES_ENERGY          = 0;
 
     inline static size_t seed = {};
 
-    inline static std::set<std::string> debug =
-#if PRODUCTION
-        { ERROR };
-#else
-        { ERROR, DEBUG, TRACE, ARGS };
-#endif
+    inline static std::set<std::string> debug = { ERROR };
 
     inline static std::vector<std::string> directions = {
         DIR_R, DIR_U, DIR_U, DIR_LU, DIR_L, DIR_LD, DIR_D, DIR_RD };
 
     static void rename(const std::string& name_old, const std::string& name_new);
     static void remove(const std::string& name);
-    static bool load(nlohmann::json& json, const std::string& name);
-    static bool save(const nlohmann::json& json, const std::string& name);
+    static bool load(nlohmann::json& json, const std::string& name, bool binary = false);
+    static bool save(const nlohmann::json& json, const std::string& name, bool binary = false);
     static uint64_t rand_u64();
-    static inline uint64_t hash_mix(uint64_t h);
-    static inline uint64_t fasthash64(const void *buf, size_t len, uint64_t seed);
+    static uint64_t hash_mix(uint64_t h);
+    static uint64_t fasthash64(const void *buf, size_t len, uint64_t seed);
 
-    static uint64_t distance(const xy_pos_t& pos1, const xy_pos_t& pos2) {
-      auto [x1, y1] = pos1;
-      auto [x2, y2] = pos2;
-      uint64_t dx = (x2 >= x1) ? (x2 - x1) : (x1 - x2);
-      uint64_t dy = (y2 >= y1) ? (y2 - y1) : (y1 - y2);
-      return std::hypot(dx, dy);
-    }
+    static uint64_t distance(const xy_pos_t& pos1, const xy_pos_t& pos2);
 
     static inline void load_by_hash(auto& value, const std::vector<uint8_t>& data, uint64_t index) {
       TRACE_GENESIS;
@@ -137,7 +119,27 @@ namespace genesis_n {
 
   ////////////////////////////////////////////////////////////////////////////////
 
-  struct area_json_t {
+  struct config_json_wrapper_t {
+    config_t&   config;
+
+    config_json_wrapper_t(config_t& config) : config(config) { }
+    bool load(const std::string& file_name);
+    bool save(const std::string& file_name);
+  };
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  struct world_json_wrapper_t {
+    world_t&   world;
+
+    world_json_wrapper_t(world_t& world) : world(world) { }
+    bool load(const std::string& file_name);
+    bool save(const std::string& file_name);
+  };
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  struct area_t {
     using xy_pos_t = utils_t::xy_pos_t;
 
     // Количество добытого ресурса вычистяется по формуле
@@ -147,55 +149,28 @@ namespace genesis_n {
 
     xy_pos_t      pos               = {};
     uint64_t      radius            = 100;
+    uint64_t      frequency         = 100;
     double        factor            = 1;
     double        sigma             = 2;
   };
 
-  struct resource_info_json_t {
-    std::string   name;
-    int64_t       stack_size    = utils_t::npos;
-    bool          extractable   = false;
+  struct resource_info_t {
+    using areas_t = std::vector<area_t>;
+
+    std::string   name          = {};
+    int64_t       stack_size    = 1000;
+    areas_t       areas         = {};
   };
 
   struct recipe_json_t {
-    using in_out_t = std::map<std::string/*name*/, int64_t/*count*/>;
+    using in_out_t = std::vector<std::pair<std::string/*name*/, int64_t/*count*/>>;
 
     std::string   name        = {};
     bool          available   = true;
     in_out_t      in_out      = {};
   };
 
-  struct config_json_t {
-    using debug_t       = std::set<std::string>;
-    using resources_t   = std::vector<resource_info_json_t>;
-    using areas_t       = std::map<std::string/*resource*/, std::vector<area_json_t>>;
-    using recipes_t     = std::vector<recipe_json_t>;
-    using xy_pos_t      = utils_t::xy_pos_t;
-
-    uint64_t      x_max                       = 1000;
-    uint64_t      y_max                       = 1000;
-    uint64_t      code_size                   = 32;
-    uint64_t      age                         = 1000;
-    uint64_t      age_delta                   = 100;
-    uint64_t      energy_remaining            = 10;
-    uint64_t      interval_update_world_ms    = 100;
-    uint64_t      interval_save_world_ms      = 60 * 1000;
-    double        mutation_probability        = 1.;
-    uint64_t      seed                        = {};
-    debug_t       debug                       = { utils_t::ERROR };
-    resources_t   resources                   = {};
-    areas_t       areas                       = {};
-    std::string   recipe_init                 = {};
-    std::string   recipe_step                 = {};
-    std::string   recipe_clone                = {};
-    recipes_t     recipes                     = {};
-    xy_pos_t      spawn_pos                   = {};
-    uint64_t      spawn_radius                = {};
-    uint64_t      spawn_min_count             = {};
-    uint64_t      spawn_max_count             = {};
-  };
-
-  struct stats_json_t {
+  struct stats_t {
     uint64_t   age              = {};
     uint64_t   microbes_count   = {};
     double     microbes_age_avg = {};
@@ -205,7 +180,7 @@ namespace genesis_n {
   ////////////////////////////////////////////////////////////////////////////////
 
   struct microbe_t {
-    using resources_t   = std::map<size_t/*ind*/, int64_t/*count*/>;
+    using resources_t   = std::vector<int64_t>;
     using code_t        = std::vector<uint8_t>;
     using xy_pos_t      = utils_t::xy_pos_t;
 
@@ -223,29 +198,26 @@ namespace genesis_n {
   };
 
   struct recipe_t {
-    using in_out_t = std::map<size_t/*ind*/, int64_t/*count*/>;
+    using in_out_t = std::vector<std::pair<uint64_t/*ind*/, int64_t/*count*/>>;
 
     std::string   name        = {};
     bool          available   = true;
     in_out_t      in_out      = {};
-
-    bool from_json(const recipe_json_t& recipe_json, const config_t& config);
-    bool to_json(recipe_json_t& recipe_json, const config_t& config) const;
   };
 
   struct config_t {
     using debug_t       = std::set<std::string>;
-    using resources_t   = std::vector<resource_info_json_t>;
-    using areas_t       = std::vector<std::vector<area_json_t>>;
+    using resources_t   = std::vector<resource_info_t>;
     using recipes_t     = std::vector<recipe_t>;
     using xy_pos_t      = utils_t::xy_pos_t;
 
     uint64_t      x_max;
     uint64_t      y_max;
     uint64_t      code_size;
+    uint64_t      regs_size;
     uint64_t      health_max;
-    uint64_t      age;
-    uint64_t      age_delta;
+    uint64_t      age_max;
+    uint64_t      age_max_delta;
     uint64_t      energy_remaining;
     uint64_t      interval_update_world_ms;
     uint64_t      interval_save_world_ms;
@@ -253,42 +225,46 @@ namespace genesis_n {
     uint64_t      seed;
     debug_t       debug;
     resources_t   resources;
-    areas_t       areas;
+    recipes_t     recipes;
     uint64_t      recipe_init;
     uint64_t      recipe_step;
     uint64_t      recipe_clone;
-    recipes_t     recipes;
     xy_pos_t      spawn_pos;
     uint64_t      spawn_radius;
     uint64_t      spawn_min_count;
     uint64_t      spawn_max_count;
+    bool          binary_data;
+  };
 
-    bool from_json(const config_json_t& config_json);
-    bool to_json(config_json_t& config_json) const;
+  struct cell_t {
+    using resources_t = std::vector<int64_t>;
+
+    microbe_t     microbe;
+    resources_t   resources;
   };
 
   struct world_t {
-    using microbes_t = std::vector<microbe_t>;
+    using cells_t = std::vector<cell_t>;
 
-    std::string   config_file_name   = {};
-    std::string   world_file_name    = {};
+    std::string    config_file_name   = {};
+    std::string    world_file_name    = {};
 
-    config_t      config             = {};
-    microbes_t    microbes           = {};
-    stats_json_t  stats              = {};
+    config_t       config             = {};
+    cells_t        cells              = {};
+    stats_t        stats              = {};
 
-    uint64_t      time_ms            = {};
-    uint64_t      update_world_ms    = {};
-    uint64_t      save_world_ms      = {};
+    uint64_t       time_ms            = {};
+    uint64_t       update_world_ms    = {};
+    uint64_t       save_world_ms      = {};
 
     void update();
-    void update_ctx();
+    void update_world();
     void update_mind(microbe_t& microbe);
     bool update_mind_recipe(const recipe_t& recipe, microbe_t& microbe);
     void init();
     void load_config();
-    void load_data();
     void save_config();
+    void load_data();
     void save_data();
 
     uint64_t xy_pos_to_ind(const utils_t::xy_pos_t& pos) {
@@ -332,38 +308,48 @@ namespace genesis_n {
 
       return pos_next;
     }
+
+    void resource_normalized(const resource_info_t& resource_info, int64_t& value) const {
+      if (value < 0) {
+        value = {};
+      } else if (value > resource_info.stack_size) {
+        value = resource_info.stack_size;
+      }
+    }
   };
 
   ////////////////////////////////////////////////////////////////////////////////
 
-  inline void to_json(nlohmann::json& json, const area_json_t& area_json) {
+  inline void to_json(nlohmann::json& json, const area_t& area_json) {
     TRACE_GENESIS;
     JSON_SAVE2(json, area_json, pos);
     JSON_SAVE2(json, area_json, radius);
+    JSON_SAVE2(json, area_json, frequency);
     JSON_SAVE2(json, area_json, factor);
     JSON_SAVE2(json, area_json, sigma);
   }
 
-  inline void from_json(const nlohmann::json& json, area_json_t& area_json) {
+  inline void from_json(const nlohmann::json& json, area_t& area_json) {
     TRACE_GENESIS;
     JSON_LOAD2(json, area_json, pos);
     JSON_LOAD2(json, area_json, radius);
+    JSON_LOAD2(json, area_json, frequency);
     JSON_LOAD2(json, area_json, factor);
     JSON_LOAD2(json, area_json, sigma);
   }
 
-  inline void to_json(nlohmann::json& json, const resource_info_json_t& resource_info_json) {
+  inline void to_json(nlohmann::json& json, const resource_info_t& resource_info_json) {
     TRACE_GENESIS;
     JSON_SAVE2(json, resource_info_json, name);
     JSON_SAVE2(json, resource_info_json, stack_size);
-    JSON_SAVE2(json, resource_info_json, extractable);
+    JSON_SAVE2(json, resource_info_json, areas);
   }
 
-  inline void from_json(const nlohmann::json& json, resource_info_json_t& resource_info_json) {
+  inline void from_json(const nlohmann::json& json, resource_info_t& resource_info_json) {
     TRACE_GENESIS;
     JSON_LOAD2(json, resource_info_json, name);
     JSON_LOAD2(json, resource_info_json, stack_size);
-    JSON_LOAD2(json, resource_info_json, extractable);
+    JSON_LOAD2(json, resource_info_json, areas);
   }
 
   inline void to_json(nlohmann::json& json, const recipe_json_t& recipe_json) {
@@ -380,54 +366,56 @@ namespace genesis_n {
     JSON_LOAD2(json, recipe_json, in_out);
   }
 
-  inline void to_json(nlohmann::json& json, const config_json_t& config_json) {
+  inline void to_json(nlohmann::json& json, const stats_t& stats) {
     TRACE_GENESIS;
-    JSON_SAVE2(json, config_json, x_max);
-    JSON_SAVE2(json, config_json, y_max);
-    JSON_SAVE2(json, config_json, code_size);
-    JSON_SAVE2(json, config_json, age);
-    JSON_SAVE2(json, config_json, age_delta);
-    JSON_SAVE2(json, config_json, energy_remaining);
-    JSON_SAVE2(json, config_json, interval_update_world_ms);
-    JSON_SAVE2(json, config_json, interval_save_world_ms);
-    JSON_SAVE2(json, config_json, mutation_probability);
-    JSON_SAVE2(json, config_json, seed);
-    JSON_SAVE2(json, config_json, debug);
-    JSON_SAVE2(json, config_json, resources);
-    JSON_SAVE2(json, config_json, areas);
-    JSON_SAVE2(json, config_json, recipe_init);
-    JSON_SAVE2(json, config_json, recipe_step);
-    JSON_SAVE2(json, config_json, recipe_clone);
-    JSON_SAVE2(json, config_json, recipes);
-    JSON_SAVE2(json, config_json, spawn_pos);
-    JSON_SAVE2(json, config_json, spawn_radius);
-    JSON_SAVE2(json, config_json, spawn_min_count);
-    JSON_SAVE2(json, config_json, spawn_max_count);
+    JSON_SAVE2(json, stats, age);
+    JSON_SAVE2(json, stats, microbes_count);
+    JSON_SAVE2(json, stats, microbes_age_avg);
+    JSON_SAVE2(json, stats, time_update);
   }
 
-  inline void from_json(const nlohmann::json& json, config_json_t& config_json) {
+  inline void from_json(const nlohmann::json& json, stats_t& stats) {
     TRACE_GENESIS;
-    JSON_LOAD2(json, config_json, x_max);
-    JSON_LOAD2(json, config_json, y_max);
-    JSON_LOAD2(json, config_json, code_size);
-    JSON_LOAD2(json, config_json, age);
-    JSON_LOAD2(json, config_json, age_delta);
-    JSON_LOAD2(json, config_json, energy_remaining);
-    JSON_LOAD2(json, config_json, interval_update_world_ms);
-    JSON_LOAD2(json, config_json, interval_save_world_ms);
-    JSON_LOAD2(json, config_json, mutation_probability);
-    JSON_LOAD2(json, config_json, seed);
-    JSON_LOAD2(json, config_json, debug);
-    JSON_LOAD2(json, config_json, resources);
-    JSON_LOAD2(json, config_json, areas);
-    JSON_LOAD2(json, config_json, recipe_init);
-    JSON_LOAD2(json, config_json, recipe_step);
-    JSON_LOAD2(json, config_json, recipe_clone);
-    JSON_LOAD2(json, config_json, recipes);
-    JSON_LOAD2(json, config_json, spawn_pos);
-    JSON_LOAD2(json, config_json, spawn_radius);
-    JSON_LOAD2(json, config_json, spawn_min_count);
-    JSON_LOAD2(json, config_json, spawn_max_count);
+    JSON_LOAD2(json, stats, age);
+    JSON_LOAD2(json, stats, microbes_count);
+    JSON_LOAD2(json, stats, microbes_age_avg);
+    JSON_LOAD2(json, stats, time_update);
+  }
+
+  inline void to_json(nlohmann::json& json, const microbe_t& microbe) {
+    TRACE_GENESIS;
+    JSON_SAVE2(json, microbe, alive);
+    JSON_SAVE2(json, microbe, family);
+    JSON_SAVE2(json, microbe, code);
+    JSON_SAVE2(json, microbe, resources);
+    JSON_SAVE2(json, microbe, pos);
+    JSON_SAVE2(json, microbe, age);
+    JSON_SAVE2(json, microbe, direction);
+    JSON_SAVE2(json, microbe, energy_remaining);
+  }
+
+  inline void from_json(const nlohmann::json& json, microbe_t& microbe) {
+    TRACE_GENESIS;
+    JSON_LOAD2(json, microbe, alive);
+    JSON_LOAD2(json, microbe, family);
+    JSON_LOAD2(json, microbe, code);
+    JSON_LOAD2(json, microbe, resources);
+    JSON_LOAD2(json, microbe, pos);
+    JSON_LOAD2(json, microbe, age);
+    JSON_LOAD2(json, microbe, direction);
+    JSON_LOAD2(json, microbe, energy_remaining);
+  }
+
+  inline void to_json(nlohmann::json& json, const cell_t& cell) {
+    TRACE_GENESIS;
+    JSON_SAVE2(json, cell, microbe);
+    JSON_SAVE2(json, cell, resources);
+  }
+
+  inline void from_json(const nlohmann::json& json, cell_t& cell) {
+    TRACE_GENESIS;
+    JSON_LOAD2(json, cell, microbe);
+    JSON_LOAD2(json, cell, resources);
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -455,7 +443,7 @@ namespace genesis_n {
     }
   }
 
-  bool utils_t::load(nlohmann::json& json, const std::string& name) {
+  bool utils_t::load(nlohmann::json& json, const std::string& name, bool binary) {
     TRACE_GENESIS;
     LOG_GENESIS(ARGS, "name: %s", name.c_str());
 
@@ -466,7 +454,14 @@ namespace genesis_n {
 
     try {
       std::ifstream file(name);
-      file >> json;
+      std::istream_iterator<uint8_t> begin(file);
+      std::istream_iterator<uint8_t> end;
+      std::string data(begin, end);
+      if (binary) {
+        json = nlohmann::json::from_msgpack(data);
+      } else {
+        json = nlohmann::json::parse(data);
+      }
       return true;
     } catch (const std::exception& e) {
       LOG_GENESIS(ERROR, "%s: %s", name.c_str(), e.what());
@@ -484,14 +479,21 @@ namespace genesis_n {
     return false;
   }
 
-  bool utils_t::save(const nlohmann::json& json, const std::string& name) {
+  bool utils_t::save(const nlohmann::json& json, const std::string& name, bool binary) {
     TRACE_GENESIS;
     LOG_GENESIS(ARGS, "name: %s", name.c_str());
 
     std::string name_tmp = name + TMP_SUFFIX;
     try {
       std::ofstream file(name_tmp);
-      file << std::setw(2) << json;
+      std::ostream_iterator<uint8_t> it_out(file);
+      if (binary) {
+        auto data = nlohmann::json::to_msgpack(json);
+        std::copy(data.begin(), data.end(), it_out);
+      } else {
+        auto data = json.dump(2);
+        std::copy(data.begin(), data.end(), it_out);
+      }
 
       utils_t::rename(name_tmp, name);
       utils_t::remove(name_tmp);
@@ -547,31 +549,260 @@ namespace genesis_n {
     return hash_mix(h);
   }
 
+  uint64_t utils_t::distance(const xy_pos_t& pos1, const xy_pos_t& pos2) {
+    auto [x1, y1] = pos1;
+    auto [x2, y2] = pos2;
+    uint64_t dx = (x2 >= x1) ? (x2 - x1) : (x1 - x2);
+    uint64_t dy = (y2 >= y1) ? (y2 - y1) : (y1 - y2);
+    return std::hypot(dx, dy);
+  }
+
   ////////////////////////////////////////////////////////////////////////////////
 
-  inline void to_json(nlohmann::json& json, const microbe_t& microbe) {
+  bool config_json_wrapper_t::load(const std::string& file_name) {
     TRACE_GENESIS;
-    JSON_SAVE2(json, microbe, alive);
-    JSON_SAVE2(json, microbe, family);
-    JSON_SAVE2(json, microbe, code);
-    JSON_SAVE2(json, microbe, resources);
-    JSON_SAVE2(json, microbe, pos);
-    JSON_SAVE2(json, microbe, age);
-    JSON_SAVE2(json, microbe, direction);
-    JSON_SAVE2(json, microbe, energy_remaining);
+
+    nlohmann::json json;
+    if (!utils_t::load(json, file_name)) {
+      LOG_GENESIS(ERROR, "can not load file %s", file_name.c_str());
+      return false;
+    }
+
+    std::map<std::string, size_t>   resources_names;
+    std::map<std::string, size_t>   recipes_names;
+    std::vector<recipe_json_t>      recipes;
+
+    config.x_max = 500;
+    JSON_LOAD2(json, config, x_max);
+    if (config.x_max < 5 || config.x_max > 100000) {
+      LOG_GENESIS(ERROR, "invalid x_max %zd", config.x_max);
+      return false;
+    }
+
+    config.y_max = 500;
+    JSON_LOAD2(json, config, y_max);
+    if (config.y_max < 5 || config.y_max > 100000) {
+      LOG_GENESIS(ERROR, "invalid x_max %zd", config.y_max);
+      return false;
+    }
+
+    config.code_size = 64;
+    JSON_LOAD2(json, config, code_size);
+    if (config.code_size < 10) {
+      LOG_GENESIS(ERROR, "invalid code_size %zd", config.code_size);
+      return false;
+    }
+
+    config.regs_size = 32;
+    JSON_LOAD2(json, config, regs_size);
+    if (config.regs_size < utils_t::REGS_SIZE_MIN || config.regs_size > 0xFF) {
+      LOG_GENESIS(ERROR, "invalid regs_size %zd", config.regs_size);
+      return false;
+    }
+
+    config.age_max = 1000;
+    JSON_LOAD2(json, config, age_max);
+
+    config.age_max_delta = 1;
+    JSON_LOAD2(json, config, age_max_delta);
+
+    config.energy_remaining = 3;
+    JSON_LOAD2(json, config, energy_remaining);
+
+    config.interval_update_world_ms = 1;
+    JSON_LOAD2(json, config, interval_update_world_ms);
+
+    config.interval_save_world_ms = 10 * 60 * 1000;
+    JSON_LOAD2(json, config, interval_save_world_ms);
+
+    config.mutation_probability = 0.1;
+    JSON_LOAD2(json, config, mutation_probability);
+    if (config.mutation_probability < 0) {
+      LOG_GENESIS(ERROR, "invalid mutation_probability %f", config.mutation_probability);
+      return false;
+    }
+
+    config.seed = 0;
+    JSON_LOAD2(json, config, seed);
+
+    config.debug = {utils_t::ERROR};
+    JSON_LOAD2(json, config, debug);
+
+    config.resources = {}; // TODO
+    JSON_LOAD2(json, config, resources);
+
+    config.spawn_pos = {100, 100};
+    JSON_LOAD2(json, config, spawn_pos);
+
+    config.spawn_radius = 100;
+    JSON_LOAD2(json, config, spawn_radius);
+
+    config.spawn_min_count = 1000;
+    JSON_LOAD2(json, config, spawn_min_count);
+
+    config.spawn_max_count = 1001;
+    JSON_LOAD2(json, config, spawn_max_count);
+
+    config.binary_data = true;
+    JSON_LOAD2(json, config, binary_data);
+
+    for (size_t i{}; i < config.resources.size(); ++i) {
+      resources_names[config.resources[i].name] = i;
+    }
+
+    config.recipes = {}; // TODO
+    JSON_LOAD(json, recipes);
+    for (const auto& recipe_tmp : recipes) {
+      config.recipes.push_back({});
+      auto& recipe = config.recipes.back();
+      recipe.name      = recipe_tmp.name;
+      recipe.available = recipe_tmp.available;
+      for (const auto& [key, val] : recipe_tmp.in_out) {
+        if (!resources_names.contains(key)) {
+          LOG_GENESIS(ERROR, "invalid in_out %s", key.c_str());
+          return false;
+        }
+        recipe.in_out.push_back({resources_names.at(key), val});
+      }
+    }
+    if (config.recipes.empty()) {
+      LOG_GENESIS(ERROR, "invalid recipes");
+      return false;
+    }
+
+    for (size_t i{}; i < config.recipes.size(); ++i) {
+      recipes_names[config.recipes[i].name] = i;
+    }
+
+    std::string recipe_init;
+    JSON_LOAD(json, recipe_init);
+    if (!recipes_names.contains(recipe_init)) {
+      LOG_GENESIS(ERROR, "invalid recipe_init %s", recipe_init.c_str());
+      return false;
+    }
+    config.recipe_init = recipes_names[recipe_init];
+
+    std::string recipe_step;
+    JSON_LOAD(json, recipe_step);
+    if (!recipes_names.contains(recipe_step)) {
+      LOG_GENESIS(ERROR, "invalid recipe_step %s", recipe_step.c_str());
+      return false;
+    }
+    config.recipe_step = recipes_names[recipe_step];
+
+    std::string recipe_clone;
+    JSON_LOAD(json, recipe_clone);
+    if (!recipes_names.contains(recipe_clone)) {
+      LOG_GENESIS(ERROR, "invalid recipe_clone %s", recipe_clone.c_str());
+      return false;
+    }
+    config.recipe_clone = recipes_names[recipe_clone];
+
+    return true;
   }
 
-  inline void from_json(const nlohmann::json& json, microbe_t& microbe) {
+  bool config_json_wrapper_t::save(const std::string& file_name) {
     TRACE_GENESIS;
-    JSON_LOAD2(json, microbe, alive);
-    JSON_LOAD2(json, microbe, family);
-    JSON_LOAD2(json, microbe, code);
-    JSON_LOAD2(json, microbe, resources);
-    JSON_LOAD2(json, microbe, pos);
-    JSON_LOAD2(json, microbe, age);
-    JSON_LOAD2(json, microbe, direction);
-    JSON_LOAD2(json, microbe, energy_remaining);
+
+    nlohmann::json json = {};
+
+    JSON_SAVE2(json, config, x_max);
+    JSON_SAVE2(json, config, y_max);
+    JSON_SAVE2(json, config, code_size);
+    JSON_SAVE2(json, config, regs_size);
+    JSON_SAVE2(json, config, age_max);
+    JSON_SAVE2(json, config, age_max_delta);
+    JSON_SAVE2(json, config, energy_remaining);
+    JSON_SAVE2(json, config, interval_update_world_ms);
+    JSON_SAVE2(json, config, interval_save_world_ms);
+    JSON_SAVE2(json, config, mutation_probability);
+    JSON_SAVE2(json, config, seed);
+    JSON_SAVE2(json, config, debug);
+    JSON_SAVE2(json, config, resources);
+    JSON_SAVE2(json, config, spawn_pos);
+    JSON_SAVE2(json, config, spawn_radius);
+    JSON_SAVE2(json, config, spawn_min_count);
+    JSON_SAVE2(json, config, spawn_max_count);
+    JSON_SAVE2(json, config, binary_data);
+
+    std::vector<recipe_json_t> recipes = {};
+    for (const auto& recipe_tmp : config.recipes) {
+      recipes.push_back({});
+      auto& recipe = recipes.back();
+      recipe.name      = recipe_tmp.name;
+      recipe.available = recipe_tmp.available;
+      for (const auto& [ind, val] : recipe_tmp.in_out) {
+        recipe.in_out.push_back({config.resources.at(ind).name, val});
+      }
+    }
+    JSON_SAVE(json, recipes);
+
+    auto recipe_init = config.recipes.at(config.recipe_init).name;
+    JSON_SAVE(json, recipe_init);
+
+    auto recipe_step = config.recipes.at(config.recipe_step).name;
+    JSON_SAVE(json, recipe_step);
+
+    auto recipe_clone = config.recipes.at(config.recipe_clone).name;
+    JSON_SAVE(json, recipe_clone);
+
+    if (!utils_t::save(json, file_name)) {
+      LOG_GENESIS(ERROR, "can not save file %s", file_name.c_str());
+      return false;
+    }
+
+    return true;
   }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
+  bool world_json_wrapper_t::load(const std::string& file_name) {
+    TRACE_GENESIS;
+
+    nlohmann::json json;
+    if (!utils_t::load(json, file_name, world.config.binary_data)) {
+      LOG_GENESIS(ERROR, "can not load file %s", file_name.c_str());
+      json = nlohmann::json::object();
+    }
+
+    JSON_LOAD2(json, world, cells);
+
+    world.cells.resize(world.config.x_max * world.config.y_max);
+    for (auto& cell : world.cells) {
+      cell.resources.resize(world.config.resources.size());
+      for (size_t ind{}; ind < cell.resources.size(); ++ind) {
+        auto& resource = cell.resources[ind];
+        auto stack_size = world.config.resources[ind].stack_size;
+        if (resource < 0) {
+          resource = 0;
+        } else if (resource > stack_size) {
+          resource = stack_size;
+        }
+      }
+    }
+
+    JSON_LOAD2(json, world, stats);
+
+    return true;
+  }
+
+  bool world_json_wrapper_t::save(const std::string& file_name) {
+    TRACE_GENESIS;
+
+    nlohmann::json json = {};
+
+    JSON_SAVE2(json, world, cells);
+    JSON_SAVE2(json, world, stats);
+
+    if (!utils_t::save(json, file_name, world.config.binary_data)) {
+      LOG_GENESIS(ERROR, "can not save file %s", file_name.c_str());
+      return false;
+    }
+
+    return true;
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
 
   bool microbe_t::validation(const config_t& config) {
     TRACE_GENESIS;
@@ -590,12 +821,22 @@ namespace genesis_n {
       code.resize(config.code_size);
     }
 
-    for (auto& [ind, count] : resources) {
-      if (ind >= config.resources.size()) {
-        LOG_GENESIS(ERROR, "invalid microbe_t::resources %ld", ind);
-        return false;
+    if (code.size() != config.regs_size) {
+      code.reserve(config.regs_size);
+      while (code.size() < config.regs_size) {
+        code.push_back(utils_t::rand_u64() % 0xFF);
       }
-      count = std::min(count, config.resources[ind].stack_size);
+      code.resize(config.regs_size);
+    }
+
+    resources.resize(config.resources.size());
+    for (size_t ind{}; ind < resources.size(); ++ind) {
+      // resource_normalized
+      if (resources[ind] < 0) {
+        resources[ind] = 0;
+      } else if (resources[ind] > config.resources[ind].stack_size) {
+        resources[ind] = config.resources[ind].stack_size;
+      }
     }
 
     if (pos.first >= config.x_max || pos.second >= config.y_max) {
@@ -616,226 +857,11 @@ namespace genesis_n {
     alive              = true;
     family             = utils_t::rand_u64();
     // code
-    resources          = {};
+    // resources
     pos                = {utils_t::rand_u64() % config.x_max, utils_t::rand_u64() % config.y_max};
-    age                = config.age + utils_t::rand_u64() % config.age_delta - 0.5 * config.age_delta;
+    age                = config.age_max + utils_t::rand_u64() % config.age_max_delta - 0.5 * config.age_max_delta;
     direction          = utils_t::rand_u64() % utils_t::direction_max;
     energy_remaining   = {};
-  }
-
-  ////////////////////////////////////////////////////////////////////////////////
-
-  bool recipe_t::from_json(const recipe_json_t& recipe_json, const config_t& config) {
-    TRACE_GENESIS;
-
-    name = recipe_json.name;
-    if (name.empty()) {
-      LOG_GENESIS(ERROR, "invalid recipe_t::name %s", name.c_str());
-      return false;
-    }
-
-    available = recipe_json.available;
-
-    for (auto& [name, count] : recipe_json.in_out) {
-      auto it = std::find_if(config.resources.begin(), config.resources.end(),
-          [&name](const auto& resource) { return name == resource.name; });
-
-      if (it == config.resources.end()) {
-        LOG_GENESIS(ERROR, "invalid recipe_t::in_out %s", name.c_str());
-        return false;
-      }
-      in_out[std::distance(config.resources.begin(), it)] = count;
-    }
-
-    if (in_out.empty()) {
-      LOG_GENESIS(ERROR, "invalid recipe_t::in_out");
-      return false;
-    }
-
-    return true;
-  }
-
-  bool recipe_t::to_json(recipe_json_t& recipe_json, const config_t& config) const {
-    TRACE_GENESIS;
-
-    recipe_json.name = name;
-
-    recipe_json.available = available;
-
-    for (auto& [ind, count] : in_out) {
-      recipe_json.in_out[config.resources[ind].name] = count;
-    }
-
-    return true;
-  }
-
-  ////////////////////////////////////////////////////////////////////////////////
-
-  bool config_t::from_json(const config_json_t& config_json) {
-    TRACE_GENESIS;
-
-    x_max = config_json.x_max;
-    if (x_max < 5 || x_max > 100000) {
-      LOG_GENESIS(ERROR, "invalid config_t::x_max %zd", x_max);
-      return false;
-    }
-
-    y_max = config_json.y_max;
-    if (y_max < 5 || y_max > 100000) {
-      LOG_GENESIS(ERROR, "invalid config_t::x_max %zd", y_max);
-      return false;
-    }
-
-    code_size = config_json.code_size;
-    if (code_size < utils_t::CODE_SIZE_MIN || code_size > 1000) {
-      LOG_GENESIS(ERROR, "invalid config_t::code_size %zd", code_size);
-      return false;
-    }
-
-    age = config_json.age;
-
-    age_delta = config_json.age_delta;
-
-    energy_remaining = config_json.energy_remaining;
-
-    interval_update_world_ms = config_json.interval_update_world_ms;
-
-    interval_save_world_ms = config_json.interval_save_world_ms;
-
-    mutation_probability = config_json.mutation_probability;
-    if (mutation_probability < 0) {
-      LOG_GENESIS(ERROR, "invalid config_t::mutation_probability %f", mutation_probability);
-      return false;
-    }
-
-    seed = config_json.seed;
-
-    debug = config_json.debug;
-    if (debug.size() > 100) {
-      LOG_GENESIS(ERROR, "invalid config_t::debug %zd", debug.size());
-      return false;
-    }
-
-    resources = config_json.resources;
-    if (resources.empty() || resources.size() > 100) {
-      LOG_GENESIS(ERROR, "invalid config_t::resources %zd", resources.size());
-      return false;
-    }
-
-    if (resources[utils_t::RES_ENERGY].name != utils_t::ENERGY) {
-      LOG_GENESIS(ERROR, "invalid config_t::resources %s", utils_t::ENERGY.c_str());
-      return false;
-    }
-
-    areas.resize(resources.size());
-    for (auto& [key, areas_v] : config_json.areas) {
-      auto it = std::find_if(resources.begin(), resources.end(),
-          [&key](const auto& resource) { return key == resource.name; });
-
-      if (it == resources.end()) {
-        LOG_GENESIS(ERROR, "invalid config_t::area %s", key.c_str());
-        return false;
-      }
-      for (const auto& area : areas_v) {
-        areas[std::distance(resources.begin(), it)].push_back(area);
-      }
-    }
-
-    recipes.assign(config_json.recipes.size(), {});
-    for (size_t i{}; i < recipes.size(); ++i) {
-      if (!recipes[i].from_json(config_json.recipes[i], *this)) {
-        LOG_GENESIS(ERROR, "invalid config_t::recipes %s", config_json.recipes[i].name.c_str());
-        return false;
-      }
-    }
-
-    if (recipes.size() < 1 || recipes.size() > 100) {
-      LOG_GENESIS(ERROR, "invalid config_t::recipes %zd", recipes.size());
-      return false;
-    }
-
-    auto get_recipe_ind = [this](const std::string& name, uint64_t& ind) -> bool {
-      auto it = std::find_if(recipes.begin(), recipes.end(),
-          [&name](const auto& recipe) { return name == recipe.name; });
-      if (it == recipes.end()) {
-        LOG_GENESIS(ERROR, "invalid config_t::recipe %s", name.c_str());
-        return false;
-      }
-      ind = std::distance(recipes.begin(), it);
-      return true;
-    };
-
-    if (!get_recipe_ind(config_json.recipe_init, recipe_init)) {
-      LOG_GENESIS(ERROR, "invalid config_t::recipe_init");
-      return false;
-    }
-
-    if (!get_recipe_ind(config_json.recipe_step, recipe_step)) {
-      LOG_GENESIS(ERROR, "invalid config_t::recipe_step");
-      return false;
-    }
-
-    if (!get_recipe_ind(config_json.recipe_clone, recipe_clone)) {
-      LOG_GENESIS(ERROR, "invalid config_t::recipe_clone");
-      return false;
-    }
-
-    spawn_pos = config_json.spawn_pos;
-    if (spawn_pos.first >= x_max || spawn_pos.second >= y_max) {
-      LOG_GENESIS(ERROR, "invalid config_t::spawn_pos");
-      return false;
-    }
-
-    spawn_radius = config_json.spawn_radius;
-    if (spawn_radius < 5) {
-      LOG_GENESIS(ERROR, "invalid config_t::spawn_radius");
-      return false;
-    }
-
-    spawn_min_count = config_json.spawn_min_count;
-
-    spawn_max_count = config_json.spawn_max_count;
-    if (spawn_max_count <= spawn_min_count) {
-      LOG_GENESIS(ERROR, "invalid config_t::spawn_max_count");
-      return false;
-    }
-
-    return true;
-  }
-
-  bool config_t::to_json(config_json_t& config_json) const {
-    TRACE_GENESIS;
-
-    config_json.x_max                      = x_max;
-    config_json.y_max                      = y_max;
-    config_json.code_size                  = code_size;
-    config_json.age                        = age;
-    config_json.age_delta                  = age_delta;
-    config_json.energy_remaining           = energy_remaining;
-    config_json.interval_update_world_ms   = interval_update_world_ms;
-    config_json.interval_save_world_ms     = interval_save_world_ms;
-    config_json.mutation_probability       = mutation_probability;
-    config_json.seed                       = seed;
-    config_json.debug                      = debug;
-    config_json.resources                  = resources;
-    for (size_t ind{}; ind < areas.size(); ++ind) {
-      for (const auto& area : areas[ind]) {
-        config_json.areas[resources[ind].name].push_back(area);
-      }
-    }
-    config_json.recipe_init  = recipes[recipe_init].name;
-    config_json.recipe_step  = recipes[recipe_step].name;
-    config_json.recipe_clone = recipes[recipe_clone].name;
-    config_json.recipes.assign(recipes.size(), {});
-    for (size_t i{}; i < recipes.size(); ++i) {
-      recipes[i].to_json(config_json.recipes[i], *this);
-    }
-    config_json.spawn_pos                  = spawn_pos;
-    config_json.spawn_radius               = spawn_radius;
-    config_json.spawn_min_count            = spawn_min_count;
-    config_json.spawn_max_count            = spawn_max_count;
-
-    return true;
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -854,7 +880,7 @@ namespace genesis_n {
     if (update_world_ms < time_ms) {
       LOG_GENESIS(TIME, "update_world_ms %zd   %zd", time_ms, time_ms - update_world_ms);
       update_world_ms = time_ms + config.interval_update_world_ms;
-      update_ctx();
+      update_world();
     }
 
     if (save_world_ms < time_ms) {
@@ -866,18 +892,41 @@ namespace genesis_n {
     LOG_GENESIS(TIME, "time end %zd", time_ms);
   }
 
-  void world_t::update_ctx() {
+  void world_t::update_world() {
     TRACE_GENESIS;
 
     stats.microbes_count = {};
     stats.microbes_age_avg = {};
 
-    for (auto& microbe : microbes) {
-      microbe.energy_remaining = config.energy_remaining;
+    {
+      for (size_t ind{}; ind < config.resources.size(); ++ind) {
+        const auto& resource_info = config.resources[ind];
+        for (const auto& area : resource_info.areas) {
+          for (size_t i{}; i < area.frequency; ++i) {
+            uint64_t x = area.pos.first  + utils_t::rand_u64() % (2 * area.radius) - area.radius;
+            uint64_t y = area.pos.second + utils_t::rand_u64() % (2 * area.radius) - area.radius;
+            utils_t::xy_pos_t pos = {x, y};
+            uint64_t dist = utils_t::distance(pos, area.pos);
+            double resource_delta = area.factor * std::max(0.,
+                1. - std::pow(std::abs(1. * dist / area.radius), area.sigma));
+            if (pos_valid(pos)) {
+              uint64_t xy_ind = xy_pos_to_ind(pos);
+              auto& resource = cells[xy_ind].resources[ind];
+              resource += resource_delta;
+              resource_normalized(resource_info, resource);
+            }
+          }
+        }
+      }
     }
 
-    for (size_t ind{}; ind < microbes.size(); ind++) {
-      auto& microbe = microbes[ind];
+    for (auto& cell : cells) {
+      cell.microbe.energy_remaining = config.energy_remaining;
+    }
+
+    for (size_t ind{}; ind < cells.size(); ind++) {
+      auto& cell = cells[ind];
+      auto& microbe = cell.microbe;
 
       if (!microbe.alive) {
         continue;
@@ -888,7 +937,7 @@ namespace genesis_n {
         update_mind(microbe);
         uint64_t ind_n = xy_pos_to_ind(microbe.pos);
         if (ind_n != ind) {
-          auto& microbe_n = microbes[ind_n];
+          auto& microbe_n = cells[ind_n].microbe;
           std::swap(microbe, microbe_n);
           break; // TODO
         }
@@ -913,13 +962,14 @@ namespace genesis_n {
         while (count < config.spawn_max_count) {
           microbe_t microbe;
           microbe.init(config);
-          update_mind_recipe(config.recipes[config.recipe_init], microbe);
           microbe.pos = config.spawn_pos;
           microbe.pos.first  += utils_t::rand_u64() % config.spawn_radius - 0.5 * config.spawn_radius;
           microbe.pos.second += utils_t::rand_u64() % config.spawn_radius - 0.5 * config.spawn_radius;
           uint64_t ind = xy_pos_to_ind(microbe.pos);
-          if (microbe.validation(config) && !microbes[ind].alive) {
-            microbes[ind] = std::move(microbe);
+          auto& microbe_n = cells[ind].microbe;
+          if (microbe.validation(config) && !microbe_n.alive) {
+            update_mind_recipe(config.recipes[config.recipe_init], microbe);
+            microbe_n = std::move(microbe);
           } else {
             break;
           }
@@ -930,7 +980,7 @@ namespace genesis_n {
     // stats
     {
       stats.age++;
-      stats.microbes_age_avg /= stats.microbes_count;
+      stats.microbes_age_avg /= std::max(1UL, stats.microbes_count);
     }
   }
 
@@ -941,8 +991,8 @@ namespace genesis_n {
 
     auto& code = microbe.code;
 
-    uint8_t seed;
-    utils_t::load_by_hash(seed, code, utils_t::CODE_SEED);
+    uint8_t seed; // deprecated
+    utils_t::load_by_hash(seed, code, 0);
 
     uint16_t rip;
     utils_t::load_by_hash(rip, code, utils_t::CODE_RIP2B);
@@ -1066,7 +1116,7 @@ namespace genesis_n {
         auto pos = microbe.pos;
         auto pos_n = pos_next(pos, microbe.direction);
         uint64_t ind = xy_pos_to_ind(pos_n);
-        if (pos != pos_n && !microbes[ind].alive) {
+        if (pos != pos_n && !cells[ind].microbe.alive) {
           microbe.pos = pos_n;
         }
 
@@ -1083,15 +1133,16 @@ namespace genesis_n {
 
         auto pos_n = pos_next(microbe.pos, direction);
         uint64_t ind = xy_pos_to_ind(pos_n);
-        if (!microbes[ind].alive
-            && update_mind_recipe(config.recipes[config.recipe_clone], microbe))
-        {
+
+        auto& microbe_n = cells[ind].microbe;
+
+        if (!microbe_n.alive && update_mind_recipe(config.recipes[config.recipe_clone], microbe)) {
           microbe_t microbe_child = {};
           microbe_child.init(config);
+
           microbe_child.code   = microbe.code;
           microbe_child.pos    = pos_n;
           microbe_child.family = microbe.family;
-          update_mind_recipe(config.recipes[config.recipe_init], microbe_child);
           for (auto& byte : microbe_child.code) {
             if (utils_t::rand_u64() % 0xFFFF < probability) {
               byte = utils_t::rand_u64();
@@ -1099,7 +1150,8 @@ namespace genesis_n {
             }
           }
           if (microbe_child.validation(config)) {
-            microbes[ind] = std::move(microbe_child);
+            update_mind_recipe(config.recipes[config.recipe_init], microbe_child);
+            microbe_n = std::move(microbe_child);
           }
         }
         break;
@@ -1131,26 +1183,28 @@ namespace genesis_n {
         auto pos_n = pos_next(microbe.pos, direction);
         uint64_t ind = xy_pos_to_ind(pos_n);
 
+        auto& microbe_n = cells[ind].microbe;
+
         if (microbe.pos != pos_n
             && microbe.resources[utils_t::RES_ENERGY] > strength
-            && microbes[ind].alive)
+            && microbe_n.alive)
         {
           LOG_GENESIS(MIND, "energy ok");
           microbe.resources[utils_t::RES_ENERGY] -= strength;
 
-          auto& microbe_attacked = microbes[ind];
+          // auto& microbe_attacked = microbes[ind];
 
-          if (microbe_attacked.resources[utils_t::RES_ENERGY] <= strength) {
-            for (const auto& [ind, count] : microbe_attacked.resources) {
-              auto& resource = microbe.resources[ind];
-              resource += count;
-              resource = std::max(resource, 0L);
-              resource = std::min(resource, config.resources[ind].stack_size);
-            }
-            microbe_attacked = {};
-          } else {
-            microbe_attacked.resources[utils_t::RES_ENERGY] -= strength;
-          }
+          // if (microbe_attacked.resources[utils_t::RES_ENERGY] <= strength) {
+          //   for (const auto& [ind, count] : microbe_attacked.resources) {
+          //     auto& resource = microbe.resources[ind];
+          //     resource += count;
+          //     resource = std::max(resource, 0L);
+          //     resource = std::min(resource, config.resources[ind].stack_size);
+          //   }
+          //   microbe_attacked = {};
+          // } else {
+          //   microbe_attacked.resources[utils_t::RES_ENERGY] -= strength;
+          // }
         }
         break;
 
@@ -1165,6 +1219,7 @@ namespace genesis_n {
 
   bool world_t::update_mind_recipe(const recipe_t& recipe, microbe_t& microbe) {
     auto& resources = microbe.resources;
+
     for (const auto& [ind, count] : recipe.in_out) {
       const auto& resource_info = config.resources[ind];
       auto count_n = resources[ind] + count;
@@ -1176,21 +1231,6 @@ namespace genesis_n {
     for (const auto& [ind, count] : recipe.in_out) {
       const auto& resource_info = config.resources[ind];
       int64_t count_n = count;
-
-      if (resource_info.extractable && count > 0) {
-        double multiplier = {};
-        LOG_GENESIS(MIND, "ind %zd", ind);
-        const auto& areas = config.areas[ind];
-
-        for (const auto& area : areas) {
-          uint64_t dist = utils_t::distance(microbe.pos, area.pos);
-          multiplier += area.factor * std::max(0.,
-              1. - std::pow(std::abs((double) dist / area.radius), area.sigma));
-          LOG_GENESIS(MIND, "multiplier %f", multiplier);
-        }
-        count_n *= multiplier;
-        LOG_GENESIS(MIND, "count_n %zd", count_n);
-      }
 
       auto& resource = resources[ind];
       resource += count_n;
@@ -1205,10 +1245,13 @@ namespace genesis_n {
 
   void world_t::init() {
     TRACE_GENESIS;
+
     load_config();
     load_data();
+
     utils_t::seed = config.seed ? config.seed : time(0);
     utils_t::debug = config.debug;
+
     save_config();
     save_data();
   }
@@ -1216,61 +1259,40 @@ namespace genesis_n {
   void world_t::load_config() {
     TRACE_GENESIS;
 
-    nlohmann::json json;
-    if (!utils_t::load(json, config_file_name)) {
-      LOG_GENESIS(ERROR, "can not load file %s", config_file_name.c_str());
-      throw std::runtime_error("invalid config json");
-    }
-
-    config_json_t config_json = json;
-
-    config = {};
-    if (!config.from_json(config_json)) {
-      LOG_GENESIS(ERROR, "invalid config");
-      throw std::runtime_error("invalid config");
-    }
-  }
-
-  void world_t::load_data() {
-    TRACE_GENESIS;
-
-    nlohmann::json json;
-    if (!utils_t::load(json, world_file_name)) {
-      LOG_GENESIS(ERROR, "can not load file %s", world_file_name.c_str());
-      microbes = {};
-    } else {
-      microbes = (world_t::microbes_t) json;
-    }
-
-    microbes.resize(config.x_max * config.y_max);
-    for (auto& microbe : microbes) {
-      if (!microbe.validation(config)) {
-        microbe = {};
-      }
+    if (!config_json_wrapper_t(config).load(config_file_name)) {
+      LOG_GENESIS(ERROR, "can not load config");
+      throw std::runtime_error("can not load config");
     }
   }
 
   void world_t::save_config() {
     TRACE_GENESIS;
 
-#if !VALGRIND
-    config_json_t config_json;
-    if (!config.to_json(config_json)) {
-      LOG_GENESIS(ERROR, "invalid config");
-      throw std::runtime_error("invalid config");
+#ifndef VALGRIND
+    if (!config_json_wrapper_t(config).save(config_file_name)) {
+      LOG_GENESIS(ERROR, "can not save config");
+      throw std::runtime_error("can not save config");
     }
-
-    nlohmann::json json = config_json;
-    utils_t::save(json, config_file_name);
 #endif
+  }
+
+  void world_t::load_data() {
+    TRACE_GENESIS;
+
+    if (!world_json_wrapper_t(*this).load(world_file_name)) {
+      LOG_GENESIS(ERROR, "can not load world");
+      throw std::runtime_error("can not load world");
+    }
   }
 
   void world_t::save_data() {
     TRACE_GENESIS;
 
-#if !VALGRIND
-    nlohmann::json json = microbes;
-    utils_t::save(json, world_file_name);
+#ifndef VALGRIND
+    if (!world_json_wrapper_t(*this).save(world_file_name)) {
+      LOG_GENESIS(ERROR, "can not save world");
+      throw std::runtime_error("can not save world");
+    }
 #endif
   }
 
