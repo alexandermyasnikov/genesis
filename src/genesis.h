@@ -939,7 +939,15 @@ namespace genesis_n {
         }
       }
 
+      if (!microbe.alive) {
+        continue;
+      }
+
       if (microbe.age <= 0 || microbe.resources[utils_t::RES_ENERGY] <= 0) {
+        for (size_t i{}; i < config.resources.size(); ++i) {
+          cell.resources[i] += microbe.resources[i];
+          utils_t::normalize(cell.resources[i], 0, config.resources[i].stack_size);
+        }
         microbe = {};
         microbe.alive = false;
         continue;
