@@ -8,22 +8,23 @@
 
 using namespace genesis_n;
 
-struct sfml_config_t {
-  std::string   font_path              = "../resources/fonts/Roboto-Regular.ttf";
-  float         win_x                  = 600;
-  float         win_y                  = 600;
-  float         zoom                   = 1.05;
-  uint64_t      fps                    = 10;
-  uint32_t      text_size              = 18;
-  uint32_t      color_background       = 0xE0E0E0FF;
-  uint32_t      color_area_available   = 0xD0D0D0FF;
-  uint32_t      color_default          = 0x000080FF;
-  uint32_t      color_min              = 0x0000FFFF;
-  uint32_t      color_max              = 0xFF0000FF;
-};
 
 
 struct genesis_sfml_t {
+  struct sfml_config_t {
+    std::string   font_path              = "../resources/fonts/Roboto-Regular.ttf";
+    float         win_x                  = 600;
+    float         win_y                  = 600;
+    float         zoom                   = 1.05;
+    uint32_t      fps                    = 10;
+    uint32_t      text_size              = 14;
+    uint32_t      color_background       = 0xE0E0E0FF;
+    uint32_t      color_area_available   = 0xD0D0D0FF;
+    uint32_t      color_default          = 0x000080FF;
+    uint32_t      color_min              = 0x0000FFFF;
+    uint32_t      color_max              = 0xFF0000FF;
+  };
+
   enum mode_t : uint64_t {
     MODE_NORMAL,
     MODE_AGE,

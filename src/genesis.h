@@ -158,7 +158,7 @@ namespace genesis_n {
 
     xy_pos_t      pos               = {};
     uint64_t      radius            = 100;
-    uint64_t      frequency         = 100;
+    double        frequency         = 0.01;
     double        factor            = 1;
     double        sigma             = 2;
   };
@@ -898,7 +898,8 @@ namespace genesis_n {
       for (size_t ind{}; ind < config.resources.size(); ++ind) {
         const auto& resource_info = config.resources[ind];
         for (const auto& area : resource_info.areas) {
-          for (size_t i{}; i < area.frequency; ++i) {
+          size_t count = area.frequency * 3.14 * area.radius * area.radius;
+          for (size_t i{}; i < count; ++i) {
             uint64_t x = area.pos.first  + utils_t::rand_u64() % (2 * area.radius) - area.radius;
             uint64_t y = area.pos.second + utils_t::rand_u64() % (2 * area.radius) - area.radius;
             utils_t::xy_pos_t pos = {x, y};
@@ -945,7 +946,7 @@ namespace genesis_n {
 
       if (microbe.age <= 0 || microbe.resources[utils_t::RES_ENERGY] <= 0) {
         for (size_t i{}; i < config.resources.size(); ++i) {
-          cell.resources[i] += microbe.resources[i];
+          cell.resources[i] += microbe.resources[i] / 2;
           utils_t::normalize(cell.resources[i], 0, config.resources[i].stack_size);
         }
         microbe = {};
