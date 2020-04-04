@@ -10,7 +10,7 @@
     "error"
   ],
   "energy_remaining": 3,
-  "interval_save_world_ms": 600000,
+  "interval_save_world_ms": 1800000,
   "interval_update_world_ms": 1,
   "mutation_probability": 0.1,
   "recipe_clone": "clone",
@@ -56,7 +56,7 @@
       "in_out": [
         [
           "energy",
-          100
+          10
         ],
         [
           "sunlight",
@@ -70,7 +70,7 @@
       "in_out": [
         [
           "energy",
-          10
+          50
         ],
         [
           "mineral",
@@ -254,8 +254,8 @@
     }
   ],
   "seed": 0,
-  "spawn_max_count": 101,
-  "spawn_min_count": 10,
+  "spawn_max_count": 301,
+  "spawn_min_count": 100,
   "spawn_pos": [
     200,
     200
