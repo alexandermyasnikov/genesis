@@ -8,63 +8,141 @@
 
 using namespace genesis_n;
 
-struct sfml_config_t {
-  std::string   font_path              = "./resources/fonts/Roboto-Regular.ttf";
-  float         win_x                  = 600;
-  float         win_y                  = 600;
-  float         zoom                   = 1.05;
-  uint64_t      fps                    = 30;
-  uint32_t      text_size              = 18;
-  uint32_t      color_background       = 0xE0E0E0FF;
-  uint32_t      color_area_available   = 0xD0D0D0FF;
-  uint32_t      color_area             = 0x90EE9050;
-  uint32_t      color_microbe          = 0x000080FF;
-};
 
 
 struct genesis_sfml_t {
+  struct sfml_config_t {
+    std::string   font_path              = "../resources/fonts/Roboto-Regular.ttf";
+    float         win_x                  = 600;
+    float         win_y                  = 600;
+    float         zoom                   = 1.05;
+    uint32_t      fps                    = 10;
+    uint32_t      text_size              = 14;
+    uint32_t      color_background       = 0xE0E0E0FF;
+    uint32_t      color_area_available   = 0xD0D0D0FF;
+    uint32_t      color_min              = 0x0000FFFF;
+    uint32_t      color_max              = 0xFF0000FF;
+  };
+
   enum mode_t : uint64_t {
     MODE_NORMAL,
     MODE_AGE,
+    MODE_AREA,
     MODE_RESOURCE,
     MODE_FAMILY,
     MODE_COUNT,
   };
 
-  struct microbe_t {
-    using resources_t   = std::map<size_t/*ind*/, int64_t/*count*/>;
-    using xy_pos_t      = utils_t::xy_pos_t;
+  struct cell_t {
+    using resources_t   = std::vector<res_val_t>;
 
     bool          alive;
     uint64_t      family;
-    resources_t   resources;
     xy_pos_t      pos;
     uint64_t      age;
-    uint64_t      direction;
+    resources_t   resources_microbe;
+    resources_t   resources_world;
   };
 
-  struct area_pos_t {
-    utils_t::xy_pos_t pos;
-    uint64_t r;
+  struct world_ctx_t {
+    using cells_t = std::vector<cell_t>;
+
+    bool       valid = false;
+    config_t   config;
+    cells_t    cells;
+    stats_t    stats;
   };
 
-  using microbes_t = std::deque<microbe_t>;
-  using areas_t    = std::deque<area_pos_t>;
+  class world_safe_t {
+    world_t             _world;
+    world_ctx_t         _ctx;
+    std::timed_mutex    _mutex;
+    std::atomic<bool>   _need_data = false;
+    std::atomic<bool>   _need_update = false;
+    std::atomic<bool>   _pause = false;
+    std::atomic<bool>   _stop = false;
 
-  sfml_config_t       config           = {};
+   public:
+    void init(const std::string& config_file_name, const std::string& world_file_name) {
+      _world.config_file_name = config_file_name;
+      _world.world_file_name  = world_file_name;
+    }
 
-  std::atomic<bool>   stop             = false;
-  std::atomic<bool>   pause            = false;
-  std::timed_mutex    mutex_world      = {};
-  std::thread         thread           = {};
+    void stop() {
+      _stop = true;
+    }
 
-  microbes_t          microbes         = {};
-  areas_t             areas            = {};
+    void pause() {
+      _pause = !_pause;
+    }
+
+    void need_update() {
+      _need_update = true;
+    }
+
+    void update() {
+      _world.init();
+      while (!_stop) {
+        if (_pause) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          continue;
+        }
+        _world.update();
+
+        if (_need_update) {
+          _world.save_data();
+          _world.load_config();
+          _world.load_data();
+          _need_update = false;
+        }
+
+        if (_need_data && _mutex.try_lock_for(std::chrono::milliseconds(1))) {
+          _ctx.config = _world.config;
+          _ctx.stats = _world.stats;
+          _ctx.cells.resize(_world.config.x_max * _world.config.y_max);
+          for (size_t ind{}; ind < _world.cells.size(); ++ind) {
+            const auto& cell    = _world.cells[ind];
+            const auto& microbe = cell.microbe;
+            auto&       cell_n  = _ctx.cells[ind];
+            cell_n.alive        = microbe.alive;
+            cell_n.family       = microbe.family;
+            cell_n.pos          = { ind % _world.config.x_max, ind / _world.config.y_max };
+            cell_n.age          = microbe.age;
+            cell_n.resources_microbe   = microbe.resources;
+            cell_n.resources_world     = cell.resources;
+          }
+          _ctx.valid = true;
+          _need_data = false;
+          _mutex.unlock();
+        }
+      }
+      _world.save_data();
+    }
+
+    void get_cells(world_ctx_t& ctx) {
+      if (!_need_data && _mutex.try_lock_for(std::chrono::milliseconds(1))) {
+        std::swap(_ctx, ctx);
+        _mutex.unlock();
+      }
+      _need_data = true;
+    }
+  };
+
+
+
+  sfml_config_t       sfml_config      = {};
+
+  std::thread         thread_world     = {};
+
+  std::string         config_file_name;
+  std::string         world_file_name;
+  world_ctx_t         ctx;
+  config_t            config;
+  world_safe_t        world;
 
   bool                showing_help     = false;
   std::string         stats_text       = {};
-
-  world_t             world            = {};
+  std::string         debug_text       = {};
 
   sf::RenderWindow    window;
   sf::View            view_world;
@@ -78,26 +156,25 @@ struct genesis_sfml_t {
   uint64_t            mode_param       = {};
 
   void init() {
-    world.init();
-
-    window.create(sf::VideoMode(config.win_x, config.win_y),
+    window.create(sf::VideoMode(sfml_config.win_x, sfml_config.win_y),
         "Genesis   amyasnikov.pro", sf::Style::Close | sf::Style::Resize);
 
-    window.setFramerateLimit(config.fps);
+    window.setFramerateLimit(sfml_config.fps);
 
-    view_world.setCenter(config.win_x / 2, config.win_y / 2);
+    view_world.setCenter(sfml_config.win_x / 2, sfml_config.win_y / 2);
 
-    if (!font.loadFromFile(config.font_path)) {
+    if (!font.loadFromFile(sfml_config.font_path)) {
       throw std::runtime_error("can not load font");
     }
 
-    thread = std::move(std::thread([this] { this->update(); }));
+    world.init(config_file_name, world_file_name);
+
+    thread_world = std::move(std::thread([this] { world.update(); }));
   }
 
   void deinit() {
-    stop = true;
-    thread.join();
-    world.save_data();
+    world.stop();
+    thread_world.join();
   }
 
   void loop() {
@@ -105,16 +182,6 @@ struct genesis_sfml_t {
       check_events();
       get_data();
       draw_data();
-    }
-  }
-
-  void update() {
-    while (!stop) {
-      if (!pause && mutex_world.try_lock_for(std::chrono::milliseconds(1))) {
-        world.update();
-        mutex_world.unlock();
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
   }
 
@@ -157,7 +224,7 @@ struct genesis_sfml_t {
           if (moving)
             break;
 
-          float zoom = config.zoom;
+          float zoom = sfml_config.zoom;
           if (event.mouseWheelScroll.delta > 0) {
             zoom = 1 / zoom;
           }
@@ -182,18 +249,15 @@ struct genesis_sfml_t {
               break;
 
             } case sf::Keyboard::U: {
-              const std::lock_guard<std::timed_mutex> lock(mutex_world);
-              world.save_data();
-              world.load_config();
-              world.load_data();
+              world.need_update();
+              break;
+
+            } case sf::Keyboard::Space: {
+              world.pause();
               break;
 
             } case sf::Keyboard::H: {
               showing_help = !showing_help;
-              break;
-
-            } case sf::Keyboard::Space: {
-              pause = !pause;
               break;
 
             } case sf::Keyboard::P: {
@@ -219,102 +283,147 @@ struct genesis_sfml_t {
   }
 
   void get_data() {
-    const std::lock_guard<std::timed_mutex> lock(mutex_world);
+    world.get_cells(ctx);
 
-    areas = {};
-    for (const auto& areas_v : world.config.areas) {
-      for (const auto& area : areas_v) {
-        areas.push_back({area.pos, area.radius});
-      }
-    }
-
-    microbes = {};
-    for (size_t i{}; i < world.microbes.size(); ++i) {
-      if (world.microbes[i].alive) {
-        microbes.push_back({});
-        auto& microbe = microbes.back();
-        microbe.alive       = world.microbes[i].alive;
-        microbe.family      = world.microbes[i].family;
-        microbe.resources   = world.microbes[i].resources;
-        microbe.pos         = world.microbes[i].pos;
-        microbe.age         = world.microbes[i].age;
-        microbe.direction   = world.microbes[i].direction;
-      }
+    if (!ctx.valid) {
+      return;
     }
 
     static std::string help_text =
+      "\n Space - pause"
       "\n U - reload config"
       "\n M - change mode"
       "\n P - change mode_param"
       "\n Q - quit";
 
+    const auto& config = ctx.config;
+
     std::string mode_text{};
     switch (mode) {
       case MODE_NORMAL:   mode_text = "normal"; break;
       case MODE_AGE:      mode_text = "age"; break;
+      case MODE_AREA:     mode_text = "area "
+                              + config.resources[mode_param % config.resources.size()].name; break;
       case MODE_RESOURCE: mode_text = "resource "
-                              + world.config.resources[mode_param % world.config.resources.size()].name; break;
+                              + config.resources[mode_param % config.resources.size()].name; break;
       case MODE_FAMILY:   mode_text = "family"; break;
       default:            mode_text = "unknown"; break;
     }
 
-    const auto& stats = world.stats;
+    const auto& stats = ctx.stats;
     stats_text = std::string{}
       + " H - show help"
       + (showing_help ? help_text : "") + "\n"
-      + (pause ? "\n PAUSE" : "")
       + "\n mode: " + mode_text
-      + "\n pos: " + std::to_string(int(pos_mouse.x)) + "\t" + std::to_string(int(pos_mouse.y))
       + "\n age: " + std::to_string(stats.age)
       + "\n microbes_count: " + std::to_string(stats.microbes_count)
       + "\n microbes_age_avg: " + std::to_string((uint64_t) stats.microbes_age_avg)
       + "\n time_update: " + std::to_string(stats.time_update)
       + "\n bpms: " + std::to_string(uint64_t (stats.microbes_count / std::max(1UL, stats.time_update)))
+      + "\n "
+      + "\n pos: " + std::to_string(int(pos_mouse.x)) + "\t" + std::to_string(int(pos_mouse.y))
       + "";
+
+    int x = pos_mouse.x;
+    int y = pos_mouse.y;
+
+    if (x >= 0 && x < (int) config.x_max && y >= 0 && y < (int) config.y_max) {
+      uint64_t ind = x + config.x_max * y;
+      const auto& cell = ctx.cells[ind];
+      if (cell.alive) {
+        stats_text += "\n family " + std::to_string(cell.family);
+        stats_text += "\n age " + std::to_string(cell.age);
+        for (size_t ind{}; ind < config.resources.size(); ++ind) {
+          if (cell.resources_microbe[ind]) {
+            stats_text += "\n resource " + config.resources[ind].name;
+            stats_text += " " + std::to_string(cell.resources_microbe[ind]);
+            stats_text += " / " + std::to_string(config.resources[ind].stack_size);
+          }
+        }
+      }
+      for (size_t ind{}; ind < config.resources.size(); ++ind) {
+        if (cell.resources_world[ind]) {
+          stats_text += "\n area " + config.resources[ind].name;
+          stats_text += " " + std::to_string(cell.resources_world[ind]);
+          stats_text += " / " + std::to_string(config.resources[ind].stack_size);
+        }
+      }
+    }
+
+    if (!debug_text.empty()) {
+      stats_text += "\n debug: " + debug_text;
+    }
   }
 
   void draw_data() {
-    window.clear(sf::Color(config.color_background));
+    if (!ctx.valid) {
+      return;
+    }
+
+    window.clear(sf::Color(sfml_config.color_background));
     window.setView(view_world);
+
+    const auto& config = ctx.config;
 
     {
       sf::RectangleShape rectangle;
-      rectangle.setSize(sf::Vector2f(world.config.x_max, world.config.y_max));
+      rectangle.setSize(sf::Vector2f(config.x_max, config.y_max));
       rectangle.setPosition(sf::Vector2f(0, 0));
-      rectangle.setFillColor(sf::Color(config.color_area_available));
+      rectangle.setFillColor(sf::Color(sfml_config.color_area_available));
       window.draw(rectangle);
     }
 
-    for (const auto& [pos, r] : areas) {
-      sf::CircleShape circle;
-      circle.setRadius(r);
-      circle.setPointCount(1000);
-      circle.setPosition(pos.first + 0.5, pos.second + 0.5);
-      circle.setOrigin(r, r);
-      circle.setFillColor(sf::Color(config.color_area));
-      window.draw(circle);
-    }
-
-    for (auto& microbe : microbes) {
-      sf::RectangleShape rectangle;
-      rectangle.setSize(sf::Vector2f(1, 1));
-      rectangle.setPosition(sf::Vector2f(microbe.pos.first, microbe.pos.second));
+    for (const auto& cell : ctx.cells) {
       sf::Color color;
+      auto c1 = sf::Color(sfml_config.color_min);
+      auto c2 = sf::Color(sfml_config.color_max);
       switch (mode) {
         case MODE_AGE: {
-          double ratio = 255. * microbe.age / (world.config.age + world.config.age_delta);
-          color = sf::Color(255, ratio, 0, 255);
+          if (!cell.alive) continue;
+          double r = 1. * cell.age / (config.age_max + config.age_max_delta);
+          color = sf::Color(
+              c1.r * (1 - r) + c2.r * r,
+              c1.g * (1 - r) + c2.g * r,
+              c1.b * (1 - r) + c2.b * r,
+              255);
           break;
+
+        } case MODE_AREA: {
+          mode_param %= config.resources.size();
+          if (!cell.resources_world[mode_param]) continue;
+          double r = 1. * cell.resources_world[mode_param] / config.resources[mode_param].stack_size;
+          color = sf::Color(
+              c1.r * (1 - r) + c2.r * r,
+              c1.g * (1 - r) + c2.g * r,
+              c1.b * (1 - r) + c2.b * r,
+              255);
+          break;
+
         } case MODE_RESOURCE: {
-          mode_param %= world.config.resources.size();
-          double ratio = 255. * microbe.resources[mode_param] / world.config.resources[mode_param].stack_size;
-          color = sf::Color(255, ratio, 0, 255);
+          if (!cell.alive) continue;
+          mode_param %= config.resources.size();
+          if (!cell.resources_microbe[mode_param]) continue;
+          double r = 1. * cell.resources_microbe[mode_param] / config.resources[mode_param].stack_size;
+          color = sf::Color(
+              c1.r * (1 - r) + c2.r * r,
+              c1.g * (1 - r) + c2.g * r,
+              c1.b * (1 - r) + c2.b * r,
+              255);
           break;
+
         } case MODE_FAMILY: {
-          color = sf::Color(microbe.family, microbe.family >> 8, microbe.family >> 16, 255);
+          if (!cell.alive) continue;
+          color = sf::Color(cell.family, cell.family >> 8, cell.family >> 16, 255);
           break;
-        } default:       color = sf::Color(config.color_microbe);
+
+        } default: {
+          if (!cell.alive) continue;
+          color = sf::Color(sfml_config.color_min);
+        }
       }
+      sf::RectangleShape rectangle;
+      rectangle.setSize(sf::Vector2f(1, 1));
+      rectangle.setPosition(sf::Vector2f(cell.pos.first, cell.pos.second));
       rectangle.setFillColor(color);
       window.draw(rectangle);
     }
@@ -325,7 +434,7 @@ struct genesis_sfml_t {
       sf::Text text;
       text.setFont(font);
       text.setString(stats_text);
-      text.setCharacterSize(config.text_size);
+      text.setCharacterSize(sfml_config.text_size);
       text.setFillColor(sf::Color::Black);
       window.draw(text);
 
@@ -362,8 +471,8 @@ int main(int argc, char* argv[]) {
 
   genesis_sfml_t context;
 
-  context.world.config_file_name = config_file_name;
-  context.world.world_file_name  = world_file_name;
+  context.config_file_name = config_file_name;
+  context.world_file_name  = world_file_name;
 
   context.init();
   context.loop();

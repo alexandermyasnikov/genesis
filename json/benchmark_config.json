@@ -1,127 +1,266 @@
 {
   "age_max": 1000,
-  "areas": {
-    "sunlight": [
-      {
-        "factor": 1.0,
-        "pos": [
-          200,
-          250
-        ],
-        "radius": 100,
-        "sigma": 2.0
-      },
-      {
-        "factor": 1.0,
-        "pos": [
-          250,
-          200
-        ],
-        "radius": 100,
-        "sigma": 2.0
-      },
-      {
-        "factor": 1.0,
-        "pos": [
-          150,
-          200
-        ],
-        "radius": 100,
-        "sigma": 2.0
-      }
-    ]
-  },
+  "age_max_delta": 1,
+  "binary_data": false,
   "code_size": 64,
   "debug": [
-    "_mind ",
+    "_mind",
     "_trace",
     "debug",
-    "error",
-    "time"
+    "error"
   ],
-  "energy_remaining": 5,
-  "interval_save_world_ms": 600000,
+  "energy_remaining": 3,
+  "interval_save_world_ms": 1800000,
   "interval_update_world_ms": 1,
+  "mutation_probability": 0.1,
   "recipe_clone": "clone",
   "recipe_init": "init",
   "recipe_step": "step",
   "recipes": [
     {
       "available": false,
-      "in_out": {
-        "energy": 200
-      },
+      "in_out": [
+        [
+          "energy",
+          100
+        ],
+        [
+          "organic",
+          100
+        ]
+      ],
       "name": "init"
     },
     {
       "available": false,
-      "in_out": {
-        "energy": -1,
-        "organic": 1
-      },
+      "in_out": [
+        [
+          "energy",
+          -1
+        ]
+      ],
       "name": "step"
     },
     {
       "available": false,
-      "in_out": {
-        "energy": -700
-      },
+      "in_out": [
+        [
+          "energy",
+          -800
+        ]
+      ],
       "name": "clone"
     },
     {
       "available": true,
-      "in_out": {
-        "sunlight": 20
-      },
-      "name": "sunlight_extract"
-    },
-    {
-      "available": true,
-      "in_out": {
-        "energy": 10,
-        "sunlight": -10
-      },
+      "in_out": [
+        [
+          "energy",
+          10
+        ],
+        [
+          "sunlight",
+          -10
+        ]
+      ],
       "name": "sunlight_to_energy"
     },
     {
       "available": true,
-      "in_out": {
-        "energy": 5,
-        "organic": -10
-      },
+      "in_out": [
+        [
+          "energy",
+          50
+        ],
+        [
+          "mineral",
+          -10
+        ]
+      ],
+      "name": "mineral_to_energy"
+    },
+    {
+      "available": true,
+      "in_out": [
+        [
+          "energy",
+          100
+        ],
+        [
+          "organic",
+          -10
+        ]
+      ],
       "name": "organic_to_energy"
+    },
+    {
+      "available": true,
+      "in_out": [
+        [
+          "energy",
+          200
+        ],
+        [
+          "sunlight",
+          -5
+        ],
+        [
+          "water",
+          -5
+        ]
+      ],
+      "name": "sunlight_water_to_energy"
+    },
+    {
+      "available": true,
+      "in_out": [
+        [
+          "mineral",
+          50
+        ],
+        [
+          "sunlight",
+          -5
+        ],
+        [
+          "water",
+          -5
+        ]
+      ],
+      "name": "mineral_water_to_energy"
     }
   ],
+  "regs_size": 32,
   "resources": [
     {
-      "extractable": false,
+      "areas": [
+        {
+          "factor": 10.0,
+          "frequency": 0.01,
+          "pos": [
+            500,
+            300
+          ],
+          "radius": 20,
+          "sigma": 2.0
+        }
+      ],
       "name": "energy",
       "stack_size": 1000
     },
     {
-      "extractable": true,
+      "areas": [
+        {
+          "factor": 10.0,
+          "frequency": 0.01,
+          "pos": [
+            0,
+            0
+          ],
+          "radius": 350,
+          "sigma": 2.0
+        },
+        {
+          "factor": 10.0,
+          "frequency": 0.01,
+          "pos": [
+            300,
+            0
+          ],
+          "radius": 350,
+          "sigma": 2.0
+        },
+        {
+          "factor": 10.0,
+          "frequency": 0.01,
+          "pos": [
+            600,
+            0
+          ],
+          "radius": 350,
+          "sigma": 2.0
+        }
+      ],
       "name": "sunlight",
       "stack_size": 1000
     },
     {
-      "extractable": false,
+      "areas": [
+        {
+          "factor": 10.0,
+          "frequency": 0.01,
+          "pos": [
+            100,
+            300
+          ],
+          "radius": 50,
+          "sigma": 2.0
+        }
+      ],
       "name": "water",
       "stack_size": 1000
     },
     {
-      "extractable": false,
+      "areas": [
+        {
+          "factor": 10.0,
+          "frequency": 0.01,
+          "pos": [
+            300,
+            300
+          ],
+          "radius": 20,
+          "sigma": 2.0
+        }
+      ],
       "name": "organic",
+      "stack_size": 1000
+    },
+    {
+      "areas": [
+        {
+          "factor": 100.0,
+          "frequency": 0.001,
+          "pos": [
+            0,
+            600
+          ],
+          "radius": 350,
+          "sigma": 2.0
+        },
+        {
+          "factor": 100.0,
+          "frequency": 0.001,
+          "pos": [
+            300,
+            600
+          ],
+          "radius": 350,
+          "sigma": 2.0
+        },
+        {
+          "factor": 100.0,
+          "frequency": 0.001,
+          "pos": [
+            600,
+            600
+          ],
+          "radius": 350,
+          "sigma": 2.0
+        }
+      ],
+      "name": "mineral",
       "stack_size": 1000
     }
   ],
   "seed": 0,
-  "spawn_max_count": 1001,
-  "spawn_min_count": 1000,
+  "spawn_max_count": 301,
+  "spawn_min_count": 100,
   "spawn_pos": [
     200,
     200
   ],
-  "spawn_radius": 200,
-  "x_max": 400,
-  "y_max": 400
+  "spawn_radius": 100,
+  "x_max": 600,
+  "y_max": 600
 }
