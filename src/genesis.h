@@ -80,11 +80,11 @@ namespace genesis_n {
     inline static std::string DIR_RU           = "RU";
     inline static std::string DIR_RD           = "RD";
     inline static std::string ENERGY           = "energy";
-    inline static uint64_t npos                = std::string::npos;
-    inline static uint64_t direction_max       = 9;
-    inline static uint64_t CODE_RIP2B          = 0;
-    inline static uint64_t REGS_SIZE_MIN       = 10;
-    inline static uint64_t RES_ENERGY          = 0;
+    inline static size_t npos                  = std::string::npos;
+    inline static size_t direction_max         = 9;
+    inline static size_t REG_RIP1B             = 0;
+    inline static size_t REGS_SIZE_MIN         = 10;
+    inline static size_t RES_ENERGY            = 0;
 
     inline static size_t seed = {};
 
@@ -112,14 +112,14 @@ namespace genesis_n {
       }
     }
 
-    static inline void load_by_hash(auto& value, const std::vector<uint8_t>& data, uint64_t index) {
+    static inline void load_data(auto& value, const std::vector<uint8_t>& data, uint64_t index) {
       TRACE_GENESIS;
       auto dst = reinterpret_cast<void*>(&value);
       auto src = reinterpret_cast<const void*>(data.data() + (index % (data.size() - sizeof(value))));
       std::memcpy(dst, src, sizeof(value));
     }
 
-    static inline void save_by_hash(auto value, std::vector<uint8_t>& data, uint64_t index) {
+    static inline void save_data(auto value, std::vector<uint8_t>& data, uint64_t index) {
       TRACE_GENESIS;
       auto dst = reinterpret_cast<void*>(data.data() + (index % (data.size() - sizeof(value))));
       auto src = reinterpret_cast<const void*>(&value);
@@ -184,10 +184,11 @@ namespace genesis_n {
 
   struct microbe_t {
     using resources_t   = std::vector<res_val_t>;
-    using code_t        = std::vector<uint8_t>;
+    using data_t        = std::vector<uint8_t>;
 
     bool          alive                = false;
-    code_t        code;
+    data_t        code;
+    data_t        regs;
     uint64_t      family; // TODO type
     resources_t   resources;
     xy_pos_t      pos;
@@ -379,6 +380,7 @@ namespace genesis_n {
     TRACE_GENESIS;
     JSON_SAVE2(json, microbe, alive);
     JSON_SAVE2(json, microbe, code);
+    JSON_SAVE2(json, microbe, regs);
     JSON_SAVE2(json, microbe, family);
     JSON_SAVE2(json, microbe, resources);
     JSON_SAVE2(json, microbe, pos);
@@ -391,6 +393,7 @@ namespace genesis_n {
     TRACE_GENESIS;
     JSON_LOAD2(json, microbe, alive);
     JSON_LOAD2(json, microbe, code);
+    JSON_LOAD2(json, microbe, regs);
     JSON_LOAD2(json, microbe, family);
     JSON_LOAD2(json, microbe, resources);
     JSON_LOAD2(json, microbe, pos);
@@ -581,7 +584,7 @@ namespace genesis_n {
 
     config.code_size = 64;
     JSON_LOAD2(json, config, code_size);
-    if (config.code_size < 10 || config.code_size > 0xFF) {
+    if (config.code_size < sizeof(uint64_t) || config.code_size > 0xFF) {
       LOG_GENESIS(ERROR, "invalid code_size %zd", config.code_size);
       return false;
     }
@@ -658,8 +661,8 @@ namespace genesis_n {
         recipe.in_out.push_back({resources_names.at(key), val});
       }
     }
-    if (config.recipes.empty()) {
-      LOG_GENESIS(ERROR, "invalid recipes");
+    if (config.recipes.empty() || config.recipes.size() > 0xFF) {
+      LOG_GENESIS(ERROR, "invalid recipes %zd", config.recipes.size());
       return false;
     }
 
@@ -768,6 +771,9 @@ namespace genesis_n {
         auto stack_size = world.config.resources[ind].stack_size;
         utils_t::normalize(resource, 0, stack_size);
       }
+      if (!cell.microbe.validation(world.config)) {
+        cell.microbe = {};
+      }
     }
 
     JSON_LOAD2(json, world, stats);
@@ -799,6 +805,7 @@ namespace genesis_n {
     alive              = true;
     family             = utils_t::rand_u64();
     // code
+    // regs
     resources.assign(config.resources.size(), 0);
     pos                = {utils_t::rand_u64() % config.x_max, utils_t::rand_u64() % config.y_max};
     age                = config.age_max + utils_t::rand_u64() % config.age_max_delta - 0.5 * config.age_max_delta;
@@ -823,12 +830,12 @@ namespace genesis_n {
 
     family = utils_t::fasthash64(code.data(), code.size(), 0);
 
-    if (code.size() != config.regs_size) {
-      code.reserve(config.regs_size);
-      while (code.size() < config.regs_size) {
-        code.push_back(utils_t::rand_u64() % 0xFF);
+    if (regs.size() != config.regs_size) {
+      regs.reserve(config.regs_size);
+      while (regs.size() < config.regs_size) {
+        regs.push_back(utils_t::rand_u64() % 0xFF);
       }
-      code.resize(config.regs_size);
+      regs.resize(config.regs_size);
     }
 
     resources.resize(config.resources.size());
@@ -952,7 +959,7 @@ namespace genesis_n {
     {
       size_t count = stats.microbes_count;
       if (count <= config.spawn_min_count) {
-        while (count < config.spawn_max_count) {
+        for (; count < config.spawn_max_count; ++count) {
           microbe_t microbe;
           microbe.init(config);
           microbe.pos = config.spawn_pos;
@@ -964,7 +971,7 @@ namespace genesis_n {
             update_mind_recipe(config.recipes[config.recipe_init], microbe);
             microbe_n = std::move(microbe);
           } else {
-            break;
+            // break;
           }
         }
       }
@@ -977,28 +984,19 @@ namespace genesis_n {
     }
   }
 
-  // TODO
   void world_t::update_mind(microbe_t& microbe) {
     TRACE_GENESIS;
 
     LOG_GENESIS(MIND, "family: %zd", microbe.family);
 
     auto& code = microbe.code;
+    auto& regs = microbe.regs;
 
-    uint8_t seed; // deprecated
-    utils_t::load_by_hash(seed, code, 0);
-
-    uint16_t rip;
-    utils_t::load_by_hash(rip, code, utils_t::CODE_RIP2B);
+    uint8_t rip = SAFE_INDEX(regs, utils_t::REG_RIP1B);
     LOG_GENESIS(MIND, "rip: %d", rip);
 
-    uint8_t cmd;
-    utils_t::load_by_hash(cmd, code, rip++);
+    uint8_t cmd = SAFE_INDEX(regs, rip++);
     LOG_GENESIS(MIND, "cmd: %d", cmd);
-
-    uint8_t args;
-    utils_t::load_by_hash(args, code, rip++);
-    LOG_GENESIS(MIND, "args: %d", args);
 
     switch (cmd) {
       case 0: {
@@ -1006,77 +1004,66 @@ namespace genesis_n {
         break;
 
       } case 1: {
-        uint16_t opnd_offset;
-        utils_t::load_by_hash(opnd_offset, code, utils_t::hash_mix((seed ^ args) + 0));
+        uint8_t reg    = SAFE_INDEX(code, rip++);
+        uint8_t offset = SAFE_INDEX(regs, reg);
 
-        LOG_GENESIS(MIND, "BR <%d>", opnd_offset);
+        LOG_GENESIS(MIND, "BR <%zd>=%zd", reg, offset);
 
-        rip += opnd_offset;
+        rip += offset;
         break;
 
       } case 2: {
-        uint16_t opnd_rip;
-        utils_t::load_by_hash(opnd_rip, code, utils_t::hash_mix((seed ^ args) + 0));
+        uint8_t reg    = SAFE_INDEX(code, rip++);
+        uint8_t offset = SAFE_INDEX(regs, reg);
 
-        LOG_GENESIS(MIND, "BR_ABS <%d>", opnd_rip);
+        LOG_GENESIS(MIND, "BR_ABS <%zd>=%zd", reg, offset);
 
-        rip = opnd_rip;
+        rip = offset;
         break;
 
       } case 3: {
-        uint16_t opnd_ind;
-        utils_t::load_by_hash(opnd_ind, code, utils_t::hash_mix((seed ^ args) + 0));
+        uint8_t reg = SAFE_INDEX(code, rip++);
+        uint8_t val = SAFE_INDEX(code, rip++);
 
-        uint8_t opnd_val;
-        utils_t::load_by_hash(opnd_val, code, utils_t::hash_mix((seed ^ args) + 1));
+        LOG_GENESIS(MIND, "SET_U8 <%zd> <%zd>", reg, val);
 
-        LOG_GENESIS(MIND, "SET_U8 <%d> <%d>", opnd_ind, opnd_val);
-
-        utils_t::save_by_hash(opnd_val, code, opnd_ind);
+        SAFE_INDEX(regs, reg) = val;
         break;
 
       } case 4: {
-        uint16_t opnd_ind;
-        utils_t::load_by_hash(opnd_ind, code, utils_t::hash_mix((seed ^ args) + 0));
+        uint8_t reg = SAFE_INDEX(code, rip++);
 
-        uint16_t opnd_val;
-        utils_t::load_by_hash(opnd_val, code, utils_t::hash_mix((seed ^ args) + 1));
+        uint16_t val;
+        utils_t::load_data(val, code, rip);
+        rip += sizeof(uint16_t);
 
-        LOG_GENESIS(MIND, "SET_U16 <%d> <%d>", opnd_ind, opnd_val);
+        LOG_GENESIS(MIND, "SET_U16 <%zd> <%zd>", reg, val);
 
-        utils_t::save_by_hash(opnd_val, code, opnd_ind);
+        utils_t::save_data(val, regs, reg);
         break;
 
       } case 5: {
-        uint16_t opnd_ind;
-        utils_t::load_by_hash(opnd_ind, code, utils_t::hash_mix((seed ^ args) + 0));
+        uint8_t reg1 = SAFE_INDEX(code, rip++);
+        uint8_t reg2 = SAFE_INDEX(code, rip++);
+        uint8_t reg3 = SAFE_INDEX(code, rip++);
 
-        uint8_t opnd2;
-        utils_t::load_by_hash(opnd2, code, utils_t::hash_mix((seed ^ args) + 1));
+        LOG_GENESIS(MIND, "ADD_U8 <%zd> <%zd> <%zd>", reg1, reg2, reg3);
 
-        uint8_t opnd3;
-        utils_t::load_by_hash(opnd3, code, utils_t::hash_mix((seed ^ args) + 2));
-
-        LOG_GENESIS(MIND, "ADD_U8 <%d> <%d> <%d>", opnd_ind, opnd2, opnd3);
-
-        uint8_t res = opnd2 + opnd3;
-        utils_t::save_by_hash(res, code, opnd_ind);
+        uint8_t arg1 = SAFE_INDEX(regs, reg1);
+        uint8_t arg2 = SAFE_INDEX(regs, reg2);
+        SAFE_INDEX(regs, reg3) = arg1 + arg2;
         break;
 
       } case 6: {
-        uint16_t opnd_ind;
-        utils_t::load_by_hash(opnd_ind, code, utils_t::hash_mix((seed ^ args) + 0));
+        uint8_t reg1 = SAFE_INDEX(code, rip++);
+        uint8_t reg2 = SAFE_INDEX(code, rip++);
+        uint8_t reg3 = SAFE_INDEX(code, rip++);
 
-        uint8_t opnd2;
-        utils_t::load_by_hash(opnd2, code, utils_t::hash_mix((seed ^ args) + 1));
+        LOG_GENESIS(MIND, "SUB_U8 <%zd> <%zd> <%zd>", reg1, reg2, reg3);
 
-        uint8_t opnd3;
-        utils_t::load_by_hash(opnd3, code, utils_t::hash_mix((seed ^ args) + 2));
-
-        LOG_GENESIS(MIND, "SUB_U8 <%d> <%d> <%d>", opnd_ind, opnd2, opnd3);
-
-        uint8_t res = opnd2 - opnd3;
-        utils_t::save_by_hash(res, code, opnd_ind);
+        uint8_t arg1 = SAFE_INDEX(regs, reg1);
+        uint8_t arg2 = SAFE_INDEX(regs, reg2);
+        SAFE_INDEX(regs, reg3) = arg1 - arg2;
         break;
 
         // MULT
@@ -1084,12 +1071,12 @@ namespace genesis_n {
         // IF
 
       } case 16: {
-        uint8_t opnd_dir;
-        utils_t::load_by_hash(opnd_dir, code, utils_t::hash_mix((seed ^ args) + 0));
+        uint8_t reg = SAFE_INDEX(code, rip++);
+        uint8_t dir = SAFE_INDEX(regs, reg);
 
-        LOG_GENESIS(MIND, "TURN <%zd>", opnd_dir);
+        LOG_GENESIS(MIND, "TURN <%zd>=%zd", reg, dir);
 
-        microbe.direction = (microbe.direction + opnd_dir) % utils_t::direction_max;
+        microbe.direction = (microbe.direction + dir) % utils_t::direction_max;
         break;
 
       } case 17: {
@@ -1117,26 +1104,29 @@ namespace genesis_n {
         break;
 
       } case 19: {
-        uint8_t opnd_dir;
-        utils_t::load_by_hash(opnd_dir, code, utils_t::hash_mix((seed ^ args) + 0));
+        uint8_t reg = SAFE_INDEX(code, rip++);
+        uint8_t dir = SAFE_INDEX(regs, reg);
 
-        LOG_GENESIS(MIND, "CLONE <%d> <%d>", opnd_dir);
+        LOG_GENESIS(MIND, "CLONE <%zd>=%zd", reg, dir);
 
-        uint64_t direction = opnd_dir % utils_t::direction_max;
-        double probability = config.mutation_probability * 0xFFFF / code.size();
-
-        auto pos_n = pos_next(microbe.pos, direction);
-        uint64_t ind = xy_pos_to_ind(pos_n);
-
-        auto& microbe_n = cells[ind].microbe;
+        double probability = config.mutation_probability * 0xFFFF / (code.size() + regs.size());
+        auto pos_n         = pos_next(microbe.pos, dir);
+        auto ind           = xy_pos_to_ind(pos_n);
+        auto& microbe_n    = cells[ind].microbe;
 
         if (!microbe_n.alive && update_mind_recipe(config.recipes[config.recipe_clone], microbe)) {
           microbe_t microbe_child = {};
           microbe_child.init(config);
 
           microbe_child.code   = microbe.code;
+          microbe_child.regs   = microbe.regs;
           microbe_child.pos    = pos_n;
           for (auto& byte : microbe_child.code) {
+            if (utils_t::rand_u64() % 0xFFFF < probability) {
+              byte = utils_t::rand_u64();
+            }
+          }
+          for (auto& byte : microbe_child.regs) {
             if (utils_t::rand_u64() % 0xFFFF < probability) {
               byte = utils_t::rand_u64();
             }
@@ -1149,76 +1139,76 @@ namespace genesis_n {
         break;
 
       } case 20: {
-        uint16_t opnd_recipe;
-        utils_t::load_by_hash(opnd_recipe, code, utils_t::hash_mix((seed ^ args) + 0));
+        uint8_t reg = SAFE_INDEX(code, rip++);
+        uint8_t ind = SAFE_INDEX(regs, reg);
 
-        LOG_GENESIS(MIND, "RECIPE <%zd>", opnd_recipe);
+        LOG_GENESIS(MIND, "RECIPE <%zd>=%zd", reg, ind);
 
-        const auto recipe = config.recipes[opnd_recipe % config.recipes.size()];
+        const auto& recipe = config.recipes[ind % config.recipes.size()];
         if (recipe.available) {
-          update_mind_recipe(config.recipes[opnd_recipe % config.recipes.size()], microbe);
+          update_mind_recipe(recipe, microbe);
         }
         break;
 
       } case 21: {
-        uint8_t opnd_dir;
-        utils_t::load_by_hash(opnd_dir, code, utils_t::hash_mix((seed ^ args) + 0));
+        uint8_t reg1 = SAFE_INDEX(code, rip++);
+        uint8_t reg2 = SAFE_INDEX(code, rip++);
 
-        uint16_t opnd_strength;
-        utils_t::load_by_hash(opnd_strength, code, utils_t::hash_mix((seed ^ args) + 1));
+        uint8_t  dir = SAFE_INDEX(regs, reg1);
+        uint16_t strength;
+        utils_t::load_data(strength, regs, reg2);
 
-        LOG_GENESIS(MIND, "ATTACK <%d> <%d>", opnd_dir, opnd_strength);
+        LOG_GENESIS(MIND, "ATTACK <%d>=%zd <%d>=%zd", reg1, dir, reg2, strength);
 
-        uint64_t direction = opnd_dir % utils_t::direction_max;
-        int64_t strength = opnd_strength % config.resources[utils_t::RES_ENERGY].stack_size;
+        auto stack_size = config.resources[utils_t::RES_ENERGY].stack_size;
+        strength %= stack_size;
 
-        auto pos_n = pos_next(microbe.pos, direction);
+        auto pos_n = pos_next(microbe.pos, dir);
         uint64_t ind = xy_pos_to_ind(pos_n);
 
         auto& microbe_attacked = cells[ind].microbe;
+        auto& energy           = microbe.resources[utils_t::RES_ENERGY];
+        auto& energy_attacked  = microbe_attacked.resources[utils_t::RES_ENERGY];
 
         if (microbe.pos != pos_n
-            && microbe.resources[utils_t::RES_ENERGY] > strength
+            && energy > strength
             && microbe_attacked.alive)
         {
-          microbe.resources[utils_t::RES_ENERGY] -= strength;
-          microbe_attacked.resources[utils_t::RES_ENERGY] -= strength;
+          energy -= strength;
+          energy_attacked -= strength;
 
-          utils_t::normalize(microbe.resources[utils_t::RES_ENERGY],
-              0, config.resources[utils_t::RES_ENERGY].stack_size);
-          utils_t::normalize(microbe_attacked.resources[utils_t::RES_ENERGY],
-              0, config.resources[utils_t::RES_ENERGY].stack_size);
+          utils_t::normalize(energy, 0, stack_size);
+          utils_t::normalize(energy_attacked, 0, stack_size);
         }
         break;
 
       } case 22: {
-        uint8_t opnd_dir;
-        utils_t::load_by_hash(opnd_dir, code, utils_t::hash_mix((seed ^ args) + 0));
+        uint8_t reg1 = SAFE_INDEX(code, rip++);
+        uint8_t reg2 = SAFE_INDEX(code, rip++);
+        uint8_t reg3 = SAFE_INDEX(code, rip++);
 
-        uint16_t opnd_resource;
-        utils_t::load_by_hash(opnd_resource, code, utils_t::hash_mix((seed ^ args) + 1));
+        uint8_t dir = SAFE_INDEX(regs, reg1);
+        uint8_t res = SAFE_INDEX(regs, reg2);
+        res_val_t val;
+        utils_t::load_data(val, regs, reg3);
 
-        int16_t opnd_value;
-        utils_t::load_by_hash(opnd_value, code, utils_t::hash_mix((seed ^ args) + 2));
+        LOG_GENESIS(MIND, "RESOURCE EXCHANGE <%zd>=%zd <%zd>=%zd <%zd>=%zd",
+            reg1, dir, reg2, res, reg3, val);
 
-        LOG_GENESIS(MIND, "RESOURCE EXCHANGE <%zd> <%zd> <%d>", opnd_dir, opnd_resource, opnd_value);
+        size_t resource         = res % config.resources.size();
+        auto   pos_n            = pos_next(microbe.pos, dir);
+        size_t ind              = xy_pos_to_ind(pos_n);
+        auto   stack_size       = config.resources[resource].stack_size;
+        auto&  microbe_resource = microbe.resources[resource];
+        auto&  cell_resource    = cells[ind].resources[resource];
 
-        uint64_t direction     = opnd_dir % utils_t::direction_max;
-        uint16_t resource      = opnd_resource % config.resources.size();
-        auto     pos_n         = pos_next(microbe.pos, direction);
-        uint64_t ind           = xy_pos_to_ind(pos_n);
-        int64_t  value         = std::min((int16_t) opnd_value, cells[ind].resources[resource]);
-        auto stack_size        = config.resources[resource].stack_size;
-        auto& microbe_resource = microbe.resources[resource];
-        auto& cell_resource    = cells[ind].resources[resource];
-
-        if (microbe_resource + value >= 0
-            && microbe_resource + value <= stack_size
-            && cell_resource - value >= 0
-            && cell_resource - value <= stack_size)
+        if (microbe_resource + val >= 0
+            && microbe_resource + val <= stack_size
+            && cell_resource - val >= 0
+            && cell_resource - val <= stack_size)
         {
-          microbe_resource += value;
-          cell_resource -= value;
+          microbe_resource += val;
+          cell_resource -= val;
         }
 
         break;
@@ -1229,7 +1219,7 @@ namespace genesis_n {
       }
     }
 
-    utils_t::save_by_hash(rip, code, utils_t::CODE_RIP2B);
+    SAFE_INDEX(regs, utils_t::REG_RIP1B) = rip;
   }
 
   bool world_t::update_mind_recipe(const recipe_t& recipe, microbe_t& microbe) {
@@ -1266,7 +1256,7 @@ namespace genesis_n {
     utils_t::debug = config.debug;
 
     save_config();
-    save_data();
+    // save_data();
   }
 
   void world_t::load_config() {
