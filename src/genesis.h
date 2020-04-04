@@ -59,9 +59,10 @@ namespace genesis_n {
   struct config_t;
   struct world_t;
 
-  struct utils_t {
-    using xy_pos_t = std::pair<uint64_t, uint64_t>;
+  using xy_pos_t    = std::pair<size_t, size_t>;
+  using res_val_t   = int16_t;
 
+  struct utils_t {
     inline static std::string TMP_SUFFIX       = ".tmp";
     inline static std::string TRACE            = "trace";
     inline static std::string ARGS             = "args ";
@@ -100,7 +101,7 @@ namespace genesis_n {
     static uint64_t hash_mix(uint64_t h);
     static uint64_t fasthash64(const void *buf, size_t len, uint64_t seed);
 
-    static uint64_t distance(const xy_pos_t& pos1, const xy_pos_t& pos2);
+    static size_t distance(const xy_pos_t& pos1, const xy_pos_t& pos2);
 
     static void normalize(auto& value, auto value_min, auto value_max) {
       TRACE_GENESIS;
@@ -149,15 +150,8 @@ namespace genesis_n {
   ////////////////////////////////////////////////////////////////////////////////
 
   struct area_t {
-    using xy_pos_t = utils_t::xy_pos_t;
-
-    // Количество добытого ресурса вычистяется по формуле
-    //    y = factor * max(0, 1 - |t / radius| ^ sigma)
-    //    t = ((x - x1) ^ 2 + (y - y1) ^ 2) ^ 0.5 - расстояние до центра источника
-    //    y *= out.count
-
     xy_pos_t      pos               = {};
-    uint64_t      radius            = 100;
+    size_t        radius            = 100;
     double        frequency         = 0.01;
     double        factor            = 1;
     double        sigma             = 2;
@@ -167,12 +161,12 @@ namespace genesis_n {
     using areas_t = std::vector<area_t>;
 
     std::string   name          = {};
-    int64_t       stack_size    = 1000;
+    res_val_t     stack_size    = 1000;
     areas_t       areas         = {};
   };
 
   struct recipe_json_t {
-    using in_out_t = std::vector<std::pair<std::string/*name*/, int64_t/*count*/>>;
+    using in_out_t = std::vector<std::pair<std::string/*name*/, res_val_t>>;
 
     std::string   name        = {};
     bool          available   = true;
@@ -189,25 +183,24 @@ namespace genesis_n {
   ////////////////////////////////////////////////////////////////////////////////
 
   struct microbe_t {
-    using resources_t   = std::vector<int64_t>;
+    using resources_t   = std::vector<res_val_t>;
     using code_t        = std::vector<uint8_t>;
-    using xy_pos_t      = utils_t::xy_pos_t;
 
     bool          alive                = false;
     code_t        code;
-    uint64_t      family;
+    uint64_t      family; // TODO type
     resources_t   resources;
     xy_pos_t      pos;
-    int64_t       age;
-    uint64_t      direction;
-    int64_t       energy_remaining;
+    res_val_t     age;
+    uint8_t       direction;
+    int8_t        energy_remaining;
 
     void init(const config_t& config);
     bool validation(const config_t& config);
   };
 
   struct recipe_t {
-    using in_out_t = std::vector<std::pair<uint64_t/*ind*/, int64_t/*count*/>>;
+    using in_out_t = std::vector<std::pair<size_t/*ind*/, res_val_t>>;
 
     std::string   name        = {};
     bool          available   = true;
@@ -218,35 +211,34 @@ namespace genesis_n {
     using debug_t       = std::set<std::string>;
     using resources_t   = std::vector<resource_info_t>;
     using recipes_t     = std::vector<recipe_t>;
-    using xy_pos_t      = utils_t::xy_pos_t;
 
-    uint64_t      x_max;
-    uint64_t      y_max;
-    uint64_t      code_size;
-    uint64_t      regs_size;
-    uint64_t      health_max;
-    uint64_t      age_max;
-    uint64_t      age_max_delta;
-    uint64_t      energy_remaining;
-    uint64_t      interval_update_world_ms;
-    uint64_t      interval_save_world_ms;
+    size_t        x_max;
+    size_t        y_max;
+    size_t        code_size;
+    size_t        regs_size;
+    size_t        health_max; // deprecated
+    size_t        age_max; // XXX type
+    size_t        age_max_delta;
+    size_t        energy_remaining;
+    size_t        interval_update_world_ms;
+    size_t        interval_save_world_ms;
     double        mutation_probability;
-    uint64_t      seed;
+    size_t        seed;
     debug_t       debug;
     resources_t   resources;
     recipes_t     recipes;
-    uint64_t      recipe_init;
-    uint64_t      recipe_step;
-    uint64_t      recipe_clone;
+    size_t        recipe_init;
+    size_t        recipe_step;
+    size_t        recipe_clone;
     xy_pos_t      spawn_pos;
-    uint64_t      spawn_radius;
-    uint64_t      spawn_min_count;
-    uint64_t      spawn_max_count;
-    bool          binary_data;
+    size_t        spawn_radius;
+    size_t        spawn_min_count;
+    size_t        spawn_max_count;
+    bool          binary_data; // deprecated
   };
 
   struct cell_t {
-    using resources_t = std::vector<int64_t>;
+    using resources_t = std::vector<res_val_t>;
 
     microbe_t     microbe;
     resources_t   resources;
@@ -262,9 +254,9 @@ namespace genesis_n {
     cells_t        cells              = {};
     stats_t        stats              = {};
 
-    uint64_t       time_ms            = {};
-    uint64_t       update_world_ms    = {};
-    uint64_t       save_world_ms      = {};
+    size_t         time_ms            = {};
+    size_t         update_world_ms    = {};
+    size_t         save_world_ms      = {};
 
     void update();
     void update_world();
@@ -276,22 +268,22 @@ namespace genesis_n {
     void load_data();
     void save_data();
 
-    uint64_t xy_pos_to_ind(const utils_t::xy_pos_t& pos) {
+    size_t xy_pos_to_ind(const xy_pos_t& pos) {
       TRACE_GENESIS;
       return pos.first + config.x_max * pos.second;
     }
 
-    utils_t::xy_pos_t xy_pos_from_ind(uint64_t ind) {
+    xy_pos_t xy_pos_from_ind(size_t ind) {
       TRACE_GENESIS;
       return {ind % config.x_max, ind / config.x_max};
     }
 
-    bool pos_valid(const utils_t::xy_pos_t& pos) const {
+    bool pos_valid(const xy_pos_t& pos) const {
       TRACE_GENESIS;
       return pos.first < config.x_max && pos.second < config.y_max;
     }
 
-    utils_t::xy_pos_t pos_next(const utils_t::xy_pos_t& pos, uint64_t direction) const {
+    xy_pos_t pos_next(const xy_pos_t& pos, uint8_t direction) const {
       TRACE_GENESIS;
 
       direction %= utils_t::direction_max;
@@ -309,7 +301,7 @@ namespace genesis_n {
         default: dx =  0; dy =  0; break;
       }
 
-      utils_t::xy_pos_t pos_next = {pos.first + dx, pos.second + dy};
+      xy_pos_t pos_next = {pos.first + dx, pos.second + dy};
 
       if (!pos_valid(pos_next)) {
         return pos;
@@ -550,11 +542,11 @@ namespace genesis_n {
     return hash_mix(h);
   }
 
-  uint64_t utils_t::distance(const xy_pos_t& pos1, const xy_pos_t& pos2) {
+  size_t utils_t::distance(const xy_pos_t& pos1, const xy_pos_t& pos2) {
     auto [x1, y1] = pos1;
     auto [x2, y2] = pos2;
-    uint64_t dx = (x2 >= x1) ? (x2 - x1) : (x1 - x2);
-    uint64_t dy = (y2 >= y1) ? (y2 - y1) : (y1 - y2);
+    size_t dx = (x2 >= x1) ? (x2 - x1) : (x1 - x2);
+    size_t dy = (y2 >= y1) ? (y2 - y1) : (y1 - y2);
     return std::hypot(dx, dy);
   }
 
@@ -583,13 +575,13 @@ namespace genesis_n {
     config.y_max = 500;
     JSON_LOAD2(json, config, y_max);
     if (config.y_max < 5 || config.y_max > 100000) {
-      LOG_GENESIS(ERROR, "invalid x_max %zd", config.y_max);
+      LOG_GENESIS(ERROR, "invalid y_max %zd", config.y_max);
       return false;
     }
 
     config.code_size = 64;
     JSON_LOAD2(json, config, code_size);
-    if (config.code_size < 10) {
+    if (config.code_size < 10 || config.code_size > 0xFF) {
       LOG_GENESIS(ERROR, "invalid code_size %zd", config.code_size);
       return false;
     }
@@ -774,11 +766,7 @@ namespace genesis_n {
       for (size_t ind{}; ind < cell.resources.size(); ++ind) {
         auto& resource = cell.resources[ind];
         auto stack_size = world.config.resources[ind].stack_size;
-        if (resource < 0) {
-          resource = 0;
-        } else if (resource > stack_size) {
-          resource = stack_size;
-        }
+        utils_t::normalize(resource, 0, stack_size);
       }
     }
 
@@ -853,7 +841,7 @@ namespace genesis_n {
       return false;
     }
 
-    utils_t::normalize(age, 0L, int64_t (config.age_max + config.age_max_delta));
+    utils_t::normalize(age, 0L, static_cast<int64_t>(config.age_max + config.age_max_delta));
 
     direction %= utils_t::direction_max;
 
@@ -900,14 +888,14 @@ namespace genesis_n {
         for (const auto& area : resource_info.areas) {
           size_t count = area.frequency * 3.14 * area.radius * area.radius;
           for (size_t i{}; i < count; ++i) {
-            uint64_t x = area.pos.first  + utils_t::rand_u64() % (2 * area.radius) - area.radius;
-            uint64_t y = area.pos.second + utils_t::rand_u64() % (2 * area.radius) - area.radius;
-            utils_t::xy_pos_t pos = {x, y};
-            uint64_t dist = utils_t::distance(pos, area.pos);
+            size_t x = area.pos.first  + utils_t::rand_u64() % (2 * area.radius) - area.radius;
+            size_t y = area.pos.second + utils_t::rand_u64() % (2 * area.radius) - area.radius;
+            xy_pos_t pos = {x, y};
+            size_t dist = utils_t::distance(pos, area.pos);
             double resource_delta = area.factor * std::max(0.,
                 1. - std::pow(std::abs(1. * dist / area.radius), area.sigma));
             if (pos_valid(pos)) {
-              uint64_t xy_ind = xy_pos_to_ind(pos);
+              size_t xy_ind = xy_pos_to_ind(pos);
               auto& resource = cells[xy_ind].resources[ind];
               resource += resource_delta;
               utils_t::normalize(resource, 0, resource_info.stack_size);
@@ -932,7 +920,7 @@ namespace genesis_n {
       while (microbe.energy_remaining > 0) {
         microbe.energy_remaining--;
         update_mind(microbe);
-        uint64_t ind_n = xy_pos_to_ind(microbe.pos);
+        size_t ind_n = xy_pos_to_ind(microbe.pos);
         if (ind_n != ind) {
           auto& microbe_n = cells[ind_n].microbe;
           std::swap(microbe, microbe_n);
@@ -970,7 +958,7 @@ namespace genesis_n {
           microbe.pos = config.spawn_pos;
           microbe.pos.first  += utils_t::rand_u64() % config.spawn_radius - 0.5 * config.spawn_radius;
           microbe.pos.second += utils_t::rand_u64() % config.spawn_radius - 0.5 * config.spawn_radius;
-          uint64_t ind = xy_pos_to_ind(microbe.pos);
+          size_t ind = xy_pos_to_ind(microbe.pos);
           auto& microbe_n = cells[ind].microbe;
           if (microbe.validation(config) && !microbe_n.alive) {
             update_mind_recipe(config.recipes[config.recipe_init], microbe);
@@ -989,6 +977,7 @@ namespace genesis_n {
     }
   }
 
+  // TODO
   void world_t::update_mind(microbe_t& microbe) {
     TRACE_GENESIS;
 
@@ -1215,10 +1204,10 @@ namespace genesis_n {
         LOG_GENESIS(MIND, "RESOURCE EXCHANGE <%zd> <%zd> <%d>", opnd_dir, opnd_resource, opnd_value);
 
         uint64_t direction     = opnd_dir % utils_t::direction_max;
-        uint64_t resource      = opnd_resource % config.resources.size();
+        uint16_t resource      = opnd_resource % config.resources.size();
         auto     pos_n         = pos_next(microbe.pos, direction);
         uint64_t ind           = xy_pos_to_ind(pos_n);
-        int64_t  value         = std::min((int64_t) opnd_value, cells[ind].resources[resource]);
+        int64_t  value         = std::min((int16_t) opnd_value, cells[ind].resources[resource]);
         auto stack_size        = config.resources[resource].stack_size;
         auto& microbe_resource = microbe.resources[resource];
         auto& cell_resource    = cells[ind].resources[resource];
@@ -1256,13 +1245,11 @@ namespace genesis_n {
 
     for (const auto& [ind, count] : recipe.in_out) {
       const auto& resource_info = config.resources[ind];
-      int64_t count_n = count;
+      auto count_n = count;
 
       auto& resource = resources[ind];
       resource += count_n;
-      resource = std::max(resource, 0L);
-      resource = std::min(resource, resource_info.stack_size);
-
+      utils_t::normalize(resource, 0, resource_info.stack_size);
       LOG_GENESIS(MIND, "resource %zd", resource);
     }
 

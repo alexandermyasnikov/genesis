@@ -20,7 +20,6 @@ struct genesis_sfml_t {
     uint32_t      text_size              = 14;
     uint32_t      color_background       = 0xE0E0E0FF;
     uint32_t      color_area_available   = 0xD0D0D0FF;
-    uint32_t      color_default          = 0x000080FF;
     uint32_t      color_min              = 0x0000FFFF;
     uint32_t      color_max              = 0xFF0000FF;
   };
@@ -35,8 +34,7 @@ struct genesis_sfml_t {
   };
 
   struct cell_t {
-    using resources_t   = std::vector<int64_t>;
-    using xy_pos_t      = utils_t::xy_pos_t;
+    using resources_t   = std::vector<res_val_t>;
 
     bool          alive;
     uint64_t      family;
@@ -106,10 +104,10 @@ struct genesis_sfml_t {
             const auto& cell    = _world.cells[ind];
             const auto& microbe = cell.microbe;
             auto&       cell_n  = _ctx.cells[ind];
-            cell_n.alive    = microbe.alive;
-            cell_n.family   = microbe.family;
-            cell_n.pos      = { ind % _world.config.x_max, ind / _world.config.y_max };
-            cell_n.age      = microbe.age;
+            cell_n.alive        = microbe.alive;
+            cell_n.family       = microbe.family;
+            cell_n.pos          = { ind % _world.config.x_max, ind / _world.config.y_max };
+            cell_n.age          = microbe.age;
             cell_n.resources_microbe   = microbe.resources;
             cell_n.resources_world     = cell.resources;
           }
@@ -420,7 +418,7 @@ struct genesis_sfml_t {
 
         } default: {
           if (!cell.alive) continue;
-          color = sf::Color(sfml_config.color_default);
+          color = sf::Color(sfml_config.color_min);
         }
       }
       sf::RectangleShape rectangle;
