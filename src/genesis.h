@@ -102,6 +102,15 @@ namespace genesis_n {
 
     static uint64_t distance(const xy_pos_t& pos1, const xy_pos_t& pos2);
 
+    static void normalize(auto& value, auto value_min, auto value_max) {
+      TRACE_GENESIS;
+      if (value < value_min) {
+        value = value_min;
+      } else if (value > value_max) {
+        value = value_max;
+      }
+    }
+
     static inline void load_by_hash(auto& value, const std::vector<uint8_t>& data, uint64_t index) {
       TRACE_GENESIS;
       auto dst = reinterpret_cast<void*>(&value);
@@ -307,14 +316,6 @@ namespace genesis_n {
       }
 
       return pos_next;
-    }
-
-    void resource_normalized(const resource_info_t& resource_info, int64_t& value) const {
-      if (value < 0) {
-        value = {};
-      } else if (value > resource_info.stack_size) {
-        value = resource_info.stack_size;
-      }
     }
   };
 
@@ -844,12 +845,7 @@ namespace genesis_n {
 
     resources.resize(config.resources.size());
     for (size_t ind{}; ind < resources.size(); ++ind) {
-      // resource_normalized
-      if (resources[ind] < 0) {
-        resources[ind] = 0;
-      } else if (resources[ind] > config.resources[ind].stack_size) {
-        resources[ind] = config.resources[ind].stack_size;
-      }
+      utils_t::normalize(resources[ind], 0, config.resources[ind].stack_size);
     }
 
     if (pos.first >= config.x_max || pos.second >= config.y_max) {
@@ -857,7 +853,7 @@ namespace genesis_n {
       return false;
     }
 
-    // age
+    utils_t::normalize(age, 0L, int64_t (config.age_max + config.age_max_delta));
 
     direction %= utils_t::direction_max;
 
@@ -913,7 +909,7 @@ namespace genesis_n {
               uint64_t xy_ind = xy_pos_to_ind(pos);
               auto& resource = cells[xy_ind].resources[ind];
               resource += resource_delta;
-              resource_normalized(resource_info, resource);
+              utils_t::normalize(resource, 0, resource_info.stack_size);
             }
           }
         }
@@ -1190,10 +1186,10 @@ namespace genesis_n {
           microbe.resources[utils_t::RES_ENERGY] -= strength;
           microbe_attacked.resources[utils_t::RES_ENERGY] -= strength;
 
-          resource_normalized(config.resources[utils_t::RES_ENERGY],
-              microbe.resources[utils_t::RES_ENERGY]);
-          resource_normalized(config.resources[utils_t::RES_ENERGY],
-              microbe_attacked.resources[utils_t::RES_ENERGY]);
+          utils_t::normalize(microbe.resources[utils_t::RES_ENERGY],
+              0, config.resources[utils_t::RES_ENERGY].stack_size);
+          utils_t::normalize(microbe_attacked.resources[utils_t::RES_ENERGY],
+              0, config.resources[utils_t::RES_ENERGY].stack_size);
         }
         break;
 
