@@ -1,4 +1,3 @@
-
 # GENESIS
 
 * Author: Alexander Myasnikov
@@ -14,9 +13,9 @@
 
 
 
-### Demo (youtube)
+### Demo
 
-![alt text](resources/demo_v0.4.gif "Demo v0.4")
+<img src="./resources/demo_v0.4.gif" alt="Demo v0.4" width="50%"/>
 
 
 
