@@ -26,7 +26,7 @@
         ],
         [
           "organic",
-          500
+          100
         ]
       ],
       "name": "init"
@@ -37,10 +37,6 @@
         [
           "energy",
           -1
-        ],
-        [
-          "organic",
-          0
         ]
       ],
       "name": "step"
@@ -60,7 +56,7 @@
       "in_out": [
         [
           "energy",
-          10
+          100
         ],
         [
           "sunlight",
@@ -74,7 +70,21 @@
       "in_out": [
         [
           "energy",
-          5
+          10
+        ],
+        [
+          "mineral",
+          -10
+        ]
+      ],
+      "name": "mineral_to_energy"
+    },
+    {
+      "available": true,
+      "in_out": [
+        [
+          "energy",
+          100
         ],
         [
           "organic",
@@ -88,11 +98,11 @@
       "in_out": [
         [
           "energy",
-          10
+          200
         ],
         [
           "sunlight",
-          -1
+          -5
         ],
         [
           "water",
@@ -100,12 +110,41 @@
         ]
       ],
       "name": "sunlight_water_to_energy"
+    },
+    {
+      "available": true,
+      "in_out": [
+        [
+          "mineral",
+          50
+        ],
+        [
+          "sunlight",
+          -5
+        ],
+        [
+          "water",
+          -5
+        ]
+      ],
+      "name": "mineral_water_to_energy"
     }
   ],
   "regs_size": 32,
   "resources": [
     {
-      "areas": [],
+      "areas": [
+        {
+          "factor": 10.0,
+          "frequency": 0.01,
+          "pos": [
+            500,
+            300
+          ],
+          "radius": 20,
+          "sigma": 2.0
+        }
+      ],
       "name": "energy",
       "stack_size": 1000
     },
@@ -113,32 +152,32 @@
       "areas": [
         {
           "factor": 10.0,
-          "frequency": 10,
+          "frequency": 0.01,
           "pos": [
-            200,
-            250
+            0,
+            0
           ],
-          "radius": 100,
+          "radius": 350,
           "sigma": 2.0
         },
         {
           "factor": 10.0,
-          "frequency": 10,
+          "frequency": 0.01,
           "pos": [
-            250,
-            200
+            300,
+            0
           ],
-          "radius": 100,
+          "radius": 350,
           "sigma": 2.0
         },
         {
           "factor": 10.0,
-          "frequency": 10,
+          "frequency": 0.01,
           "pos": [
-            150,
-            200
+            600,
+            0
           ],
-          "radius": 100,
+          "radius": 350,
           "sigma": 2.0
         }
       ],
@@ -149,12 +188,12 @@
       "areas": [
         {
           "factor": 10.0,
-          "frequency": 10,
+          "frequency": 0.01,
           "pos": [
             100,
-            250
+            300
           ],
-          "radius": 120,
+          "radius": 50,
           "sigma": 2.0
         }
       ],
@@ -162,19 +201,66 @@
       "stack_size": 1000
     },
     {
-      "areas": [],
+      "areas": [
+        {
+          "factor": 10.0,
+          "frequency": 0.01,
+          "pos": [
+            300,
+            300
+          ],
+          "radius": 20,
+          "sigma": 2.0
+        }
+      ],
       "name": "organic",
+      "stack_size": 1000
+    },
+    {
+      "areas": [
+        {
+          "factor": 100.0,
+          "frequency": 0.001,
+          "pos": [
+            0,
+            600
+          ],
+          "radius": 350,
+          "sigma": 2.0
+        },
+        {
+          "factor": 100.0,
+          "frequency": 0.001,
+          "pos": [
+            300,
+            600
+          ],
+          "radius": 350,
+          "sigma": 2.0
+        },
+        {
+          "factor": 100.0,
+          "frequency": 0.001,
+          "pos": [
+            600,
+            600
+          ],
+          "radius": 350,
+          "sigma": 2.0
+        }
+      ],
+      "name": "mineral",
       "stack_size": 1000
     }
   ],
   "seed": 0,
-  "spawn_max_count": 1001,
-  "spawn_min_count": 1000,
+  "spawn_max_count": 101,
+  "spawn_min_count": 10,
   "spawn_pos": [
     200,
     200
   ],
   "spawn_radius": 100,
-  "x_max": 400,
-  "y_max": 400
+  "x_max": 600,
+  "y_max": 600
 }
