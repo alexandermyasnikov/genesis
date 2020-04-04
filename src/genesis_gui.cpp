@@ -60,6 +60,7 @@ struct genesis_sfml_t {
     std::timed_mutex    _mutex;
     std::atomic<bool>   _need_data = false;
     std::atomic<bool>   _need_update = false;
+    std::atomic<bool>   _pause = false;
     std::atomic<bool>   _stop = false;
 
    public:
@@ -72,6 +73,10 @@ struct genesis_sfml_t {
       _stop = true;
     }
 
+    void pause() {
+      _pause = !_pause;
+    }
+
     void need_update() {
       _need_update = true;
     }
@@ -79,6 +84,10 @@ struct genesis_sfml_t {
     void update() {
       _world.init();
       while (!_stop) {
+        if (_pause) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          continue;
+        }
         _world.update();
 
         if (_need_update) {
@@ -107,7 +116,6 @@ struct genesis_sfml_t {
           _need_data = false;
           _mutex.unlock();
         }
-        // std::this_thread::sleep_for(std::chrono::milliseconds(1));
       }
       _world.save_data();
     }
@@ -125,7 +133,6 @@ struct genesis_sfml_t {
 
   sfml_config_t       sfml_config      = {};
 
-  std::atomic<bool>   need_update      = false;
   std::thread         thread_world     = {};
 
   std::string         config_file_name;
@@ -136,6 +143,7 @@ struct genesis_sfml_t {
 
   bool                showing_help     = false;
   std::string         stats_text       = {};
+  std::string         debug_text       = {};
 
   sf::RenderWindow    window;
   sf::View            view_world;
@@ -245,6 +253,10 @@ struct genesis_sfml_t {
               world.need_update();
               break;
 
+            } case sf::Keyboard::Space: {
+              world.pause();
+              break;
+
             } case sf::Keyboard::H: {
               showing_help = !showing_help;
               break;
@@ -279,6 +291,7 @@ struct genesis_sfml_t {
     }
 
     static std::string help_text =
+      "\n Space - pause"
       "\n U - reload config"
       "\n M - change mode"
       "\n P - change mode_param"
@@ -303,13 +316,44 @@ struct genesis_sfml_t {
       + " H - show help"
       + (showing_help ? help_text : "") + "\n"
       + "\n mode: " + mode_text
-      + "\n pos: " + std::to_string(int(pos_mouse.x)) + "\t" + std::to_string(int(pos_mouse.y))
       + "\n age: " + std::to_string(stats.age)
       + "\n microbes_count: " + std::to_string(stats.microbes_count)
       + "\n microbes_age_avg: " + std::to_string((uint64_t) stats.microbes_age_avg)
       + "\n time_update: " + std::to_string(stats.time_update)
       + "\n bpms: " + std::to_string(uint64_t (stats.microbes_count / std::max(1UL, stats.time_update)))
+      + "\n "
+      + "\n pos: " + std::to_string(int(pos_mouse.x)) + "\t" + std::to_string(int(pos_mouse.y))
       + "";
+
+    int x = pos_mouse.x;
+    int y = pos_mouse.y;
+
+    if (x >= 0 && x < (int) config.x_max && y >= 0 && y < (int) config.y_max) {
+      uint64_t ind = x + config.x_max * y;
+      const auto& cell = ctx.cells[ind];
+      if (cell.alive) {
+        stats_text += "\n family " + std::to_string(cell.family);
+        stats_text += "\n age " + std::to_string(cell.age);
+        for (size_t ind{}; ind < config.resources.size(); ++ind) {
+          if (cell.resources_microbe[ind]) {
+            stats_text += "\n resource " + config.resources[ind].name;
+            stats_text += " " + std::to_string(cell.resources_microbe[ind]);
+            stats_text += " / " + std::to_string(config.resources[ind].stack_size);
+          }
+        }
+      }
+      for (size_t ind{}; ind < config.resources.size(); ++ind) {
+        if (cell.resources_world[ind]) {
+          stats_text += "\n area " + config.resources[ind].name;
+          stats_text += " " + std::to_string(cell.resources_world[ind]);
+          stats_text += " / " + std::to_string(config.resources[ind].stack_size);
+        }
+      }
+    }
+
+    if (!debug_text.empty()) {
+      stats_text += "\n debug: " + debug_text;
+    }
   }
 
   void draw_data() {
@@ -332,12 +376,12 @@ struct genesis_sfml_t {
 
     for (const auto& cell : ctx.cells) {
       sf::Color color;
+      auto c1 = sf::Color(sfml_config.color_min);
+      auto c2 = sf::Color(sfml_config.color_max);
       switch (mode) {
         case MODE_AGE: {
           if (!cell.alive) continue;
           double r = 1. * cell.age / (config.age_max + config.age_max_delta);
-          auto c1 = sf::Color(sfml_config.color_min);
-          auto c2 = sf::Color(sfml_config.color_max);
           color = sf::Color(
               c1.r * (1 - r) + c2.r * r,
               c1.g * (1 - r) + c2.g * r,
@@ -349,8 +393,6 @@ struct genesis_sfml_t {
           mode_param %= config.resources.size();
           if (!cell.resources_world[mode_param]) continue;
           double r = 1. * cell.resources_world[mode_param] / config.resources[mode_param].stack_size;
-          auto c1 = sf::Color(sfml_config.color_min);
-          auto c2 = sf::Color(sfml_config.color_max);
           color = sf::Color(
               c1.r * (1 - r) + c2.r * r,
               c1.g * (1 - r) + c2.g * r,
@@ -361,9 +403,8 @@ struct genesis_sfml_t {
         } case MODE_RESOURCE: {
           if (!cell.alive) continue;
           mode_param %= config.resources.size();
+          if (!cell.resources_microbe[mode_param]) continue;
           double r = 1. * cell.resources_microbe[mode_param] / config.resources[mode_param].stack_size;
-          auto c1 = sf::Color(sfml_config.color_min);
-          auto c2 = sf::Color(sfml_config.color_max);
           color = sf::Color(
               c1.r * (1 - r) + c2.r * r,
               c1.g * (1 - r) + c2.g * r,
