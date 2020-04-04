@@ -185,16 +185,16 @@ namespace genesis_n {
     using xy_pos_t      = utils_t::xy_pos_t;
 
     bool          alive                = false;
-    uint64_t      family;
     code_t        code;
+    uint64_t      family;
     resources_t   resources;
     xy_pos_t      pos;
     int64_t       age;
     uint64_t      direction;
     int64_t       energy_remaining;
 
-    bool validation(const config_t& config);
     void init(const config_t& config);
+    bool validation(const config_t& config);
   };
 
   struct recipe_t {
@@ -385,8 +385,8 @@ namespace genesis_n {
   inline void to_json(nlohmann::json& json, const microbe_t& microbe) {
     TRACE_GENESIS;
     JSON_SAVE2(json, microbe, alive);
-    JSON_SAVE2(json, microbe, family);
     JSON_SAVE2(json, microbe, code);
+    JSON_SAVE2(json, microbe, family);
     JSON_SAVE2(json, microbe, resources);
     JSON_SAVE2(json, microbe, pos);
     JSON_SAVE2(json, microbe, age);
@@ -397,8 +397,8 @@ namespace genesis_n {
   inline void from_json(const nlohmann::json& json, microbe_t& microbe) {
     TRACE_GENESIS;
     JSON_LOAD2(json, microbe, alive);
-    JSON_LOAD2(json, microbe, family);
     JSON_LOAD2(json, microbe, code);
+    JSON_LOAD2(json, microbe, family);
     JSON_LOAD2(json, microbe, resources);
     JSON_LOAD2(json, microbe, pos);
     JSON_LOAD2(json, microbe, age);
@@ -804,14 +804,25 @@ namespace genesis_n {
 
   ////////////////////////////////////////////////////////////////////////////////
 
+  void microbe_t::init(const config_t& config) {
+    TRACE_GENESIS;
+
+    alive              = true;
+    family             = utils_t::rand_u64();
+    // code
+    resources.assign(config.resources.size(), 0);
+    pos                = {utils_t::rand_u64() % config.x_max, utils_t::rand_u64() % config.y_max};
+    age                = config.age_max + utils_t::rand_u64() % config.age_max_delta - 0.5 * config.age_max_delta;
+    direction          = utils_t::rand_u64() % utils_t::direction_max;
+    energy_remaining   = {};
+  }
+
   bool microbe_t::validation(const config_t& config) {
     TRACE_GENESIS;
 
     if (!alive) {
       return false;
     }
-
-    // family
 
     if (code.size() != config.code_size) {
       code.reserve(config.code_size);
@@ -820,6 +831,8 @@ namespace genesis_n {
       }
       code.resize(config.code_size);
     }
+
+    family = utils_t::fasthash64(code.data(), code.size(), 0);
 
     if (code.size() != config.regs_size) {
       code.reserve(config.regs_size);
@@ -849,19 +862,6 @@ namespace genesis_n {
     direction %= utils_t::direction_max;
 
     return true;
-  }
-
-  void microbe_t::init(const config_t& config) {
-    TRACE_GENESIS;
-
-    alive              = true;
-    family             = utils_t::rand_u64();
-    // code
-    resources.assign(config.resources.size(), 0);
-    pos                = {utils_t::rand_u64() % config.x_max, utils_t::rand_u64() % config.y_max};
-    age                = config.age_max + utils_t::rand_u64() % config.age_max_delta - 0.5 * config.age_max_delta;
-    direction          = utils_t::rand_u64() % utils_t::direction_max;
-    energy_remaining   = {};
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -924,7 +924,7 @@ namespace genesis_n {
       cell.microbe.energy_remaining = config.energy_remaining;
     }
 
-    for (size_t ind{}; ind < cells.size(); ind++) {
+    for (size_t ind{}; ind < cells.size(); ++ind) {
       auto& cell = cells[ind];
       auto& microbe = cell.microbe;
 
@@ -1142,11 +1142,9 @@ namespace genesis_n {
 
           microbe_child.code   = microbe.code;
           microbe_child.pos    = pos_n;
-          microbe_child.family = microbe.family;
           for (auto& byte : microbe_child.code) {
             if (utils_t::rand_u64() % 0xFFFF < probability) {
               byte = utils_t::rand_u64();
-              microbe_child.family = utils_t::rand_u64();
             }
           }
           if (microbe_child.validation(config)) {
