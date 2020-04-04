@@ -16,33 +16,32 @@
 
 ### Demo (youtube)
 
-[![Demo](http://img.youtube.com/vi/-uerfX1w4SQ/0.jpg)](https://www.youtube.com/watch?v=-uerfX1w4SQ "Demo v0.2")
+![alt text](resources/demo_v0.4.gif "Demo v0.4")
 
 
 
 ### World
 
 * Мир - прямоугольная область, состоящая из клеток.
-* Присутствуют области с ресурсами, которые боты могут извлекать.
+* В мире генерируются разные ресурсы, необъодимые ботам для жизни.
 * В одной клетке может находиться один бот.
 
 
 
 ### Bot (Microbe)
 
-* Бот содержит геном (код), которые определяет поведение бота.
-* У бота есть хранилице ресурсов.
-* Ресурсы могут создаваться из других ресурсов или извекаться из вне.
-* Бот может перемещаться, добывать/создавать ресурсы, клонировать себя, манипулировать со своим геномом.
+* Бот содержит геном, которые определяет поведение бота.
+* Бот может хранить в себе ресурсы и обмениваться ими с окружающей средой.
+* Бот может преобразовывать одни ресурсы в другие.
+* Бот может атаковать других ботов.
 * Время жизни бота ограничено.
 
 
 
 ### TODO
 
-* Добавить команды атаки и другие.
-* Добавить возможность определять родственные геномы.
 * Добавить возможность реагировать бота на раздражения (прерывания).
+* Убрать msgpack
 
 
 
@@ -54,90 +53,267 @@
 ```
 {
   "age_max": 1000,
-  "areas": {
-    "sunlight": [
-      {
-        "factor": 1.0,
-        "pos": [
-          300,
-          500
-        ],
-        "radius": 50,
-        "sigma": 2.0
-      },
-      {
-        "factor": 1.0,
-        "pos": [
-          500,
-          300
-        ],
-        "radius": 250,
-        "sigma": 2.0
-      },
-      {
-        "factor": 1.0,
-        "pos": [
-          200,
-          200
-        ],
-        "radius": 150,
-        "sigma": 2.0
-      }
-    ]
-  },
+  "age_max_delta": 1,
+  "binary_data": false,
   "code_size": 64,
   "debug": [
-    "_mind ",
+    "_mind",
     "_trace",
     "debug",
-    "error",
-    "time"
+    "error"
   ],
-  "energy_remaining": 5,
-  "interval_save_world_ms": 600000,
+  "energy_remaining": 3,
+  "interval_save_world_ms": 1800000,
   "interval_update_world_ms": 1,
+  "mutation_probability": 0.1,
+  "recipe_clone": "clone",
+  "recipe_init": "init",
+  "recipe_step": "step",
   "recipes": [
     {
+      "available": false,
+      "in_out": [
+        [
+          "energy",
+          100
+        ],
+        [
+          "organic",
+          100
+        ]
+      ],
+      "name": "init"
+    },
+    {
+      "available": false,
+      "in_out": [
+        [
+          "energy",
+          -1
+        ]
+      ],
+      "name": "step"
+    },
+    {
+      "available": false,
+      "in_out": [
+        [
+          "energy",
+          -800
+        ]
+      ],
+      "name": "clone"
+    },
+    {
       "available": true,
-      "in_out": {
-        "energy": 10,
-        "sunlight": -10
-      },
+      "in_out": [
+        [
+          "energy",
+          10
+        ],
+        [
+          "sunlight",
+          -10
+        ]
+      ],
       "name": "sunlight_to_energy"
     },
     {
       "available": true,
-      "in_out": {
-        "sunlight": 10
-      },
-      "name": "sunlight_extract"
+      "in_out": [
+        [
+          "energy",
+          50
+        ],
+        [
+          "mineral",
+          -10
+        ]
+      ],
+      "name": "mineral_to_energy"
+    },
+    {
+      "available": true,
+      "in_out": [
+        [
+          "energy",
+          100
+        ],
+        [
+          "organic",
+          -10
+        ]
+      ],
+      "name": "organic_to_energy"
+    },
+    {
+      "available": true,
+      "in_out": [
+        [
+          "energy",
+          200
+        ],
+        [
+          "sunlight",
+          -5
+        ],
+        [
+          "water",
+          -5
+        ]
+      ],
+      "name": "sunlight_water_to_energy"
+    },
+    {
+      "available": true,
+      "in_out": [
+        [
+          "mineral",
+          50
+        ],
+        [
+          "sunlight",
+          -5
+        ],
+        [
+          "water",
+          -5
+        ]
+      ],
+      "name": "mineral_water_to_energy"
     }
   ],
+  "regs_size": 32,
   "resources": [
     {
-      "extractable": false,
+      "areas": [
+        {
+          "factor": 10.0,
+          "frequency": 0.01,
+          "pos": [
+            500,
+            300
+          ],
+          "radius": 20,
+          "sigma": 2.0
+        }
+      ],
       "name": "energy",
       "stack_size": 1000
     },
     {
-      "extractable": true,
+      "areas": [
+        {
+          "factor": 10.0,
+          "frequency": 0.01,
+          "pos": [
+            0,
+            0
+          ],
+          "radius": 350,
+          "sigma": 2.0
+        },
+        {
+          "factor": 10.0,
+          "frequency": 0.01,
+          "pos": [
+            300,
+            0
+          ],
+          "radius": 350,
+          "sigma": 2.0
+        },
+        {
+          "factor": 10.0,
+          "frequency": 0.01,
+          "pos": [
+            600,
+            0
+          ],
+          "radius": 350,
+          "sigma": 2.0
+        }
+      ],
       "name": "sunlight",
       "stack_size": 1000
     },
     {
-      "extractable": false,
+      "areas": [
+        {
+          "factor": 10.0,
+          "frequency": 0.01,
+          "pos": [
+            100,
+            300
+          ],
+          "radius": 50,
+          "sigma": 2.0
+        }
+      ],
       "name": "water",
+      "stack_size": 1000
+    },
+    {
+      "areas": [
+        {
+          "factor": 10.0,
+          "frequency": 0.01,
+          "pos": [
+            300,
+            300
+          ],
+          "radius": 20,
+          "sigma": 2.0
+        }
+      ],
+      "name": "organic",
+      "stack_size": 1000
+    },
+    {
+      "areas": [
+        {
+          "factor": 100.0,
+          "frequency": 0.001,
+          "pos": [
+            0,
+            600
+          ],
+          "radius": 350,
+          "sigma": 2.0
+        },
+        {
+          "factor": 100.0,
+          "frequency": 0.001,
+          "pos": [
+            300,
+            600
+          ],
+          "radius": 350,
+          "sigma": 2.0
+        },
+        {
+          "factor": 100.0,
+          "frequency": 0.001,
+          "pos": [
+            600,
+            600
+          ],
+          "radius": 350,
+          "sigma": 2.0
+        }
+      ],
+      "name": "mineral",
       "stack_size": 1000
     }
   ],
   "seed": 0,
-  "spawn_max_count": 501,
-  "spawn_min_count": 500,
+  "spawn_max_count": 301,
+  "spawn_min_count": 100,
   "spawn_pos": [
     200,
     200
   ],
-  "spawn_radius": 50,
+  "spawn_radius": 100,
   "x_max": 600,
   "y_max": 600
 }
