@@ -857,7 +857,7 @@ namespace genesis_n {
     alive              = true;
     family             = utils_t::rand_u64();
     // code
-    // resources
+    resources.assign(config.resources.size(), 0);
     pos                = {utils_t::rand_u64() % config.x_max, utils_t::rand_u64() % config.y_max};
     age                = config.age_max + utils_t::rand_u64() % config.age_max_delta - 0.5 * config.age_max_delta;
     direction          = utils_t::rand_u64() % utils_t::direction_max;
@@ -1183,29 +1183,52 @@ namespace genesis_n {
         auto pos_n = pos_next(microbe.pos, direction);
         uint64_t ind = xy_pos_to_ind(pos_n);
 
-        auto& microbe_n = cells[ind].microbe;
+        auto& microbe_attacked = cells[ind].microbe;
 
         if (microbe.pos != pos_n
             && microbe.resources[utils_t::RES_ENERGY] > strength
-            && microbe_n.alive)
+            && microbe_attacked.alive)
         {
-          LOG_GENESIS(MIND, "energy ok");
           microbe.resources[utils_t::RES_ENERGY] -= strength;
+          microbe_attacked.resources[utils_t::RES_ENERGY] -= strength;
 
-          // auto& microbe_attacked = microbes[ind];
-
-          // if (microbe_attacked.resources[utils_t::RES_ENERGY] <= strength) {
-          //   for (const auto& [ind, count] : microbe_attacked.resources) {
-          //     auto& resource = microbe.resources[ind];
-          //     resource += count;
-          //     resource = std::max(resource, 0L);
-          //     resource = std::min(resource, config.resources[ind].stack_size);
-          //   }
-          //   microbe_attacked = {};
-          // } else {
-          //   microbe_attacked.resources[utils_t::RES_ENERGY] -= strength;
-          // }
+          resource_normalized(config.resources[utils_t::RES_ENERGY],
+              microbe.resources[utils_t::RES_ENERGY]);
+          resource_normalized(config.resources[utils_t::RES_ENERGY],
+              microbe_attacked.resources[utils_t::RES_ENERGY]);
         }
+        break;
+
+      } case 22: {
+        uint8_t opnd_dir;
+        utils_t::load_by_hash(opnd_dir, code, utils_t::hash_mix((seed ^ args) + 0));
+
+        uint16_t opnd_resource;
+        utils_t::load_by_hash(opnd_resource, code, utils_t::hash_mix((seed ^ args) + 1));
+
+        int16_t opnd_value;
+        utils_t::load_by_hash(opnd_value, code, utils_t::hash_mix((seed ^ args) + 2));
+
+        LOG_GENESIS(MIND, "RESOURCE EXCHANGE <%zd> <%zd> <%d>", opnd_dir, opnd_resource, opnd_value);
+
+        uint64_t direction     = opnd_dir % utils_t::direction_max;
+        uint64_t resource      = opnd_resource % config.resources.size();
+        auto     pos_n         = pos_next(microbe.pos, direction);
+        uint64_t ind           = xy_pos_to_ind(pos_n);
+        int64_t  value         = std::min((int64_t) opnd_value, cells[ind].resources[resource]);
+        auto stack_size        = config.resources[resource].stack_size;
+        auto& microbe_resource = microbe.resources[resource];
+        auto& cell_resource    = cells[ind].resources[resource];
+
+        if (microbe_resource + value >= 0
+            && microbe_resource + value <= stack_size
+            && cell_resource - value >= 0
+            && cell_resource - value <= stack_size)
+        {
+          microbe_resource += value;
+          cell_resource -= value;
+        }
+
         break;
 
       } default: {
