@@ -17,7 +17,7 @@ struct genesis_sfml_t {
     float         win_y                  = 600;
     float         zoom                   = 1.05;
     uint32_t      fps                    = 10;
-    uint32_t      text_size              = 14;
+    uint32_t      text_size              = 16;
     uint32_t      color_background       = 0xE0E0E0FF;
     uint32_t      color_area_available   = 0xD0D0D0FF;
     uint32_t      color_min              = 0x0000FFFF;
@@ -152,12 +152,13 @@ struct genesis_sfml_t {
   bool                moving           = false;
   sf::Font            font;
 
-  uint64_t            mode             = MODE_NORMAL;
-  uint64_t            mode_param       = {};
+  size_t              mode             = MODE_NORMAL;
+  size_t              mode_param       = {};
+  bool                draw             = true;
 
   void init() {
     window.create(sf::VideoMode(sfml_config.win_x, sfml_config.win_y),
-        "Genesis   amyasnikov.pro", sf::Style::Close | sf::Style::Resize);
+        "Genesis   amyasnikov.pro", sf::Style::Close);
 
     window.setFramerateLimit(sfml_config.fps);
 
@@ -234,12 +235,7 @@ struct genesis_sfml_t {
           break;
 
         } case sf::Event::Resized: {
-          double aspect_ratio = double(window.getSize().x) / window.getSize().y;
-
-          view_world.setSize(window.getSize().x, window.getSize().x / aspect_ratio);
-
-          view_text.setCenter(window.getSize().x / 2, window.getSize().y / 2);
-          view_text.setSize(window.getSize().x, window.getSize().x / aspect_ratio);
+          // TODO
           break;
 
         } case sf::Event::KeyReleased: {
@@ -271,8 +267,13 @@ struct genesis_sfml_t {
               }
               break;
 
+            } case sf::Keyboard::D: {
+              draw = !draw;
+              break;
+
+            } default: {
+              break;
             }
-            default: break;
           }
           break;
         }
@@ -294,35 +295,57 @@ struct genesis_sfml_t {
       "\n U - reload config"
       "\n M - change mode"
       "\n P - change mode_param"
+      "\n D - draw"
       "\n Q - quit";
 
     const auto& config = ctx.config;
+    const auto& stats  = ctx.stats;
 
     std::string mode_text{};
+    std::string param_text{};
     switch (mode) {
-      case MODE_NORMAL:   mode_text = "normal"; break;
-      case MODE_AGE:      mode_text = "age"; break;
-      case MODE_AREA:     mode_text = "area "
-                              + config.resources[mode_param % config.resources.size()].name; break;
-      case MODE_RESOURCE: mode_text = "resource "
-                              + config.resources[mode_param % config.resources.size()].name; break;
-      case MODE_FAMILY:   mode_text = "family"; break;
-      default:            mode_text = "unknown"; break;
+      case MODE_NORMAL: {
+        mode_text = "normal";
+        break;
+      } case MODE_AGE: {
+        mode_text = "age";
+        break;
+      } case MODE_AREA: {
+        mode_param %= config.resources.size();
+        std::string name = config.resources[mode_param].name;
+        mode_text   = "area " + name;
+        param_text  = "sum " + std::to_string((uint64_t) stats.resources_area_sum[mode_param]);
+        param_text += " avg " + std::to_string((uint64_t) stats.resources_area_avg[mode_param]);
+        break;
+      } case MODE_RESOURCE: {
+        mode_param %= config.resources.size();
+        std::string name = config.resources[mode_param].name;
+        mode_text   = "resource " + name;
+        param_text  = "sum " + std::to_string((uint64_t) stats.resources_microbe_sum[mode_param]);
+        param_text += " avg " + std::to_string((uint64_t) stats.resources_microbe_avg[mode_param]);
+        break;
+      } case MODE_FAMILY: {
+        mode_text = "family";
+        break;
+      } default: {
+        mode_text = "unknown";
+        break;
+      }
     }
 
-    const auto& stats = ctx.stats;
     stats_text = std::string{}
       + " H - show help"
       + (showing_help ? help_text : "") + "\n"
       + "\n mode: " + mode_text
+      + (!param_text.empty() ? ("\n " + param_text) : "")
       + "\n age: " + std::to_string(stats.age)
       + "\n microbes_count: " + std::to_string(stats.microbes_count)
       + "\n microbes_age_avg: " + std::to_string((uint64_t) stats.microbes_age_avg)
       + "\n time_update: " + std::to_string(stats.time_update)
       + "\n bpms: " + std::to_string(uint64_t (stats.microbes_count / std::max(1UL, stats.time_update)))
-      + "\n "
-      + "\n pos: " + std::to_string(int(pos_mouse.x)) + "\t" + std::to_string(int(pos_mouse.y))
-      + "";
+      + "\n ";
+
+    stats_text += "\n pos: " + std::to_string(int(pos_mouse.x)) + "\t" + std::to_string(int(pos_mouse.y));
 
     int x = pos_mouse.x;
     int y = pos_mouse.y;
@@ -356,7 +379,21 @@ struct genesis_sfml_t {
   }
 
   void draw_data() {
+
     if (!ctx.valid) {
+      window.clear(sf::Color(sfml_config.color_background));
+
+      {
+        window.setView(view_text);
+        sf::Text text;
+        text.setFont(font);
+        text.setString("LOADING...");
+        text.setCharacterSize(4 * sfml_config.text_size);
+        text.setFillColor(sf::Color::Black);
+        window.draw(text);
+      }
+
+      window.display();
       return;
     }
 
@@ -373,59 +410,61 @@ struct genesis_sfml_t {
       window.draw(rectangle);
     }
 
-    for (const auto& cell : ctx.cells) {
-      sf::Color color;
-      auto c1 = sf::Color(sfml_config.color_min);
-      auto c2 = sf::Color(sfml_config.color_max);
-      switch (mode) {
-        case MODE_AGE: {
-          if (!cell.alive) continue;
-          double r = 1. * cell.age / (config.age_max + config.age_max_delta);
-          color = sf::Color(
-              c1.r * (1 - r) + c2.r * r,
-              c1.g * (1 - r) + c2.g * r,
-              c1.b * (1 - r) + c2.b * r,
-              255);
-          break;
+    if (draw) {
+      for (const auto& cell : ctx.cells) {
+        sf::Color color;
+        auto c1 = sf::Color(sfml_config.color_min);
+        auto c2 = sf::Color(sfml_config.color_max);
+        switch (mode) {
+          case MODE_AGE: {
+            if (!cell.alive) continue;
+            double r = 1. * cell.age / (config.age_max + config.age_max_delta);
+            color = sf::Color(
+                c1.r * (1 - r) + c2.r * r,
+                c1.g * (1 - r) + c2.g * r,
+                c1.b * (1 - r) + c2.b * r,
+                255);
+            break;
 
-        } case MODE_AREA: {
-          mode_param %= config.resources.size();
-          if (!cell.resources_world[mode_param]) continue;
-          double r = 1. * cell.resources_world[mode_param] / config.resources[mode_param].stack_size;
-          color = sf::Color(
-              c1.r * (1 - r) + c2.r * r,
-              c1.g * (1 - r) + c2.g * r,
-              c1.b * (1 - r) + c2.b * r,
-              255);
-          break;
+          } case MODE_AREA: {
+            mode_param %= config.resources.size();
+            if (!cell.resources_world[mode_param]) continue;
+            double r = 1. * cell.resources_world[mode_param] / config.resources[mode_param].stack_size;
+            color = sf::Color(
+                c1.r * (1 - r) + c2.r * r,
+                c1.g * (1 - r) + c2.g * r,
+                c1.b * (1 - r) + c2.b * r,
+                255);
+            break;
 
-        } case MODE_RESOURCE: {
-          if (!cell.alive) continue;
-          mode_param %= config.resources.size();
-          if (!cell.resources_microbe[mode_param]) continue;
-          double r = 1. * cell.resources_microbe[mode_param] / config.resources[mode_param].stack_size;
-          color = sf::Color(
-              c1.r * (1 - r) + c2.r * r,
-              c1.g * (1 - r) + c2.g * r,
-              c1.b * (1 - r) + c2.b * r,
-              255);
-          break;
+          } case MODE_RESOURCE: {
+            if (!cell.alive) continue;
+            mode_param %= config.resources.size();
+            if (!cell.resources_microbe[mode_param]) continue;
+            double r = 1. * cell.resources_microbe[mode_param] / config.resources[mode_param].stack_size;
+            color = sf::Color(
+                c1.r * (1 - r) + c2.r * r,
+                c1.g * (1 - r) + c2.g * r,
+                c1.b * (1 - r) + c2.b * r,
+                255);
+            break;
 
-        } case MODE_FAMILY: {
-          if (!cell.alive) continue;
-          color = sf::Color(cell.family, cell.family >> 8, cell.family >> 16, 255);
-          break;
+          } case MODE_FAMILY: {
+            if (!cell.alive) continue;
+            color = sf::Color(cell.family, cell.family >> 8, cell.family >> 16, 255);
+            break;
 
-        } default: {
-          if (!cell.alive) continue;
-          color = sf::Color(sfml_config.color_min);
+          } default: {
+            if (!cell.alive) continue;
+            color = sf::Color(sfml_config.color_min);
+          }
         }
+        sf::RectangleShape rectangle;
+        rectangle.setSize(sf::Vector2f(1, 1));
+        rectangle.setPosition(sf::Vector2f(cell.pos.first, cell.pos.second));
+        rectangle.setFillColor(color);
+        window.draw(rectangle);
       }
-      sf::RectangleShape rectangle;
-      rectangle.setSize(sf::Vector2f(1, 1));
-      rectangle.setPosition(sf::Vector2f(cell.pos.first, cell.pos.second));
-      rectangle.setFillColor(color);
-      window.draw(rectangle);
     }
 
     {

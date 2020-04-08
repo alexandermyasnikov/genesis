@@ -174,10 +174,16 @@ namespace genesis_n {
   };
 
   struct stats_t {
-    uint64_t   age              = {};
-    uint64_t   microbes_count   = {};
-    double     microbes_age_avg = {};
-    uint64_t   time_update      = {};
+    using resources_t = std::vector<double>;
+
+    uint64_t      age                 = {};
+    uint64_t      microbes_count      = {};
+    double        microbes_age_avg    = {};
+    uint64_t      time_update         = {};
+    resources_t   resources_area_sum      = {};
+    resources_t   resources_area_avg      = {};
+    resources_t   resources_microbe_sum   = {};
+    resources_t   resources_microbe_avg   = {};
   };
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -189,12 +195,15 @@ namespace genesis_n {
     bool          alive                = false;
     data_t        code;
     data_t        regs;
-    uint64_t      family; // TODO type
     resources_t   resources;
     xy_pos_t      pos;
     res_val_t     age;
     uint8_t       direction;
     int8_t        energy_remaining;
+
+    // stats
+    uint64_t      family;
+    uint8_t       cmd_last;
 
     void init(const config_t& config);
     bool validation(const config_t& config);
@@ -218,10 +227,11 @@ namespace genesis_n {
     size_t        code_size;
     size_t        regs_size;
     size_t        health_max; // deprecated
-    size_t        age_max; // XXX type
-    size_t        age_max_delta;
+    res_val_t     age_max; // XXX type
+    res_val_t     age_max_delta;
     size_t        energy_remaining;
     size_t        interval_update_world_ms;
+    size_t        interval_update_stats_ms;
     size_t        interval_save_world_ms;
     double        mutation_probability;
     size_t        seed;
@@ -257,12 +267,14 @@ namespace genesis_n {
 
     size_t         time_ms            = {};
     size_t         update_world_ms    = {};
+    size_t         update_stats_ms    = {};
     size_t         save_world_ms      = {};
 
     void update();
     void update_world();
     void update_mind(microbe_t& microbe);
     bool update_mind_recipe(const recipe_t& recipe, microbe_t& microbe);
+    void update_stats();
     void init();
     void load_config();
     void save_config();
@@ -366,6 +378,10 @@ namespace genesis_n {
     JSON_SAVE2(json, stats, microbes_count);
     JSON_SAVE2(json, stats, microbes_age_avg);
     JSON_SAVE2(json, stats, time_update);
+    JSON_SAVE2(json, stats, resources_area_sum);
+    JSON_SAVE2(json, stats, resources_area_avg);
+    JSON_SAVE2(json, stats, resources_microbe_sum);
+    JSON_SAVE2(json, stats, resources_microbe_avg);
   }
 
   inline void from_json(const nlohmann::json& json, stats_t& stats) {
@@ -374,6 +390,10 @@ namespace genesis_n {
     JSON_LOAD2(json, stats, microbes_count);
     JSON_LOAD2(json, stats, microbes_age_avg);
     JSON_LOAD2(json, stats, time_update);
+    JSON_LOAD2(json, stats, resources_area_sum);
+    JSON_LOAD2(json, stats, resources_area_avg);
+    JSON_LOAD2(json, stats, resources_microbe_sum);
+    JSON_LOAD2(json, stats, resources_microbe_avg);
   }
 
   inline void to_json(nlohmann::json& json, const microbe_t& microbe) {
@@ -381,12 +401,13 @@ namespace genesis_n {
     JSON_SAVE2(json, microbe, alive);
     JSON_SAVE2(json, microbe, code);
     JSON_SAVE2(json, microbe, regs);
-    JSON_SAVE2(json, microbe, family);
     JSON_SAVE2(json, microbe, resources);
     JSON_SAVE2(json, microbe, pos);
     JSON_SAVE2(json, microbe, age);
     JSON_SAVE2(json, microbe, direction);
     JSON_SAVE2(json, microbe, energy_remaining);
+    // family
+    // cmd_last
   }
 
   inline void from_json(const nlohmann::json& json, microbe_t& microbe) {
@@ -394,12 +415,13 @@ namespace genesis_n {
     JSON_LOAD2(json, microbe, alive);
     JSON_LOAD2(json, microbe, code);
     JSON_LOAD2(json, microbe, regs);
-    JSON_LOAD2(json, microbe, family);
     JSON_LOAD2(json, microbe, resources);
     JSON_LOAD2(json, microbe, pos);
     JSON_LOAD2(json, microbe, age);
     JSON_LOAD2(json, microbe, direction);
     JSON_LOAD2(json, microbe, energy_remaining);
+    // family
+    // cmd_last
   }
 
   inline void to_json(nlohmann::json& json, const cell_t& cell) {
@@ -608,6 +630,9 @@ namespace genesis_n {
     config.interval_update_world_ms = 1;
     JSON_LOAD2(json, config, interval_update_world_ms);
 
+    config.interval_update_stats_ms = 100;
+    JSON_LOAD2(json, config, interval_update_stats_ms);
+
     config.interval_save_world_ms = 10 * 60 * 1000;
     JSON_LOAD2(json, config, interval_save_world_ms);
 
@@ -710,6 +735,7 @@ namespace genesis_n {
     JSON_SAVE2(json, config, age_max_delta);
     JSON_SAVE2(json, config, energy_remaining);
     JSON_SAVE2(json, config, interval_update_world_ms);
+    JSON_SAVE2(json, config, interval_update_stats_ms);
     JSON_SAVE2(json, config, interval_save_world_ms);
     JSON_SAVE2(json, config, mutation_probability);
     JSON_SAVE2(json, config, seed);
@@ -803,9 +829,9 @@ namespace genesis_n {
     TRACE_GENESIS;
 
     alive              = true;
-    family             = utils_t::rand_u64();
     // code
     // regs
+    family             = {};
     resources.assign(config.resources.size(), 0);
     pos                = {utils_t::rand_u64() % config.x_max, utils_t::rand_u64() % config.y_max};
     age                = config.age_max + utils_t::rand_u64() % config.age_max_delta - 0.5 * config.age_max_delta;
@@ -828,8 +854,6 @@ namespace genesis_n {
       code.resize(config.code_size);
     }
 
-    family = utils_t::fasthash64(code.data(), code.size(), 0);
-
     if (regs.size() != config.regs_size) {
       regs.reserve(config.regs_size);
       while (regs.size() < config.regs_size) {
@@ -837,6 +861,8 @@ namespace genesis_n {
       }
       regs.resize(config.regs_size);
     }
+
+    family = utils_t::fasthash64(code.data(), code.size(), 0);
 
     resources.resize(config.resources.size());
     for (size_t ind{}; ind < resources.size(); ++ind) {
@@ -848,7 +874,7 @@ namespace genesis_n {
       return false;
     }
 
-    utils_t::normalize(age, 0L, static_cast<int64_t>(config.age_max + config.age_max_delta));
+    utils_t::normalize(age, 0L, config.age_max + config.age_max_delta);
 
     direction %= utils_t::direction_max;
 
@@ -874,6 +900,12 @@ namespace genesis_n {
       update_world();
     }
 
+    if (update_stats_ms < time_ms) {
+      LOG_GENESIS(TIME, "update_stats_ms %zd   %zd", time_ms, time_ms - update_stats_ms);
+      update_stats_ms = time_ms + config.interval_update_stats_ms;
+      update_stats();
+    }
+
     if (save_world_ms < time_ms) {
       LOG_GENESIS(TIME, "save_world_ms %zd   %zd", time_ms, time_ms - save_world_ms);
       save_world_ms = time_ms + config.interval_save_world_ms;
@@ -886,10 +918,7 @@ namespace genesis_n {
   void world_t::update_world() {
     TRACE_GENESIS;
 
-    stats.microbes_count = {};
-    stats.microbes_age_avg = {};
-
-    {
+    { // creating resources
       for (size_t ind{}; ind < config.resources.size(); ++ind) {
         const auto& resource_info = config.resources[ind];
         for (const auto& area : resource_info.areas) {
@@ -952,8 +981,6 @@ namespace genesis_n {
       update_mind_recipe(config.recipes[config.recipe_step], microbe);
 
       microbe.age--;
-      stats.microbes_count++;
-      stats.microbes_age_avg += microbe.age;
     }
 
     {
@@ -971,23 +998,17 @@ namespace genesis_n {
             update_mind_recipe(config.recipes[config.recipe_init], microbe);
             microbe_n = std::move(microbe);
           } else {
-            // break;
+            break;
           }
         }
       }
-    }
-
-    // stats
-    {
-      stats.age++;
-      stats.microbes_age_avg /= std::max(1UL, stats.microbes_count);
     }
   }
 
   void world_t::update_mind(microbe_t& microbe) {
     TRACE_GENESIS;
 
-    LOG_GENESIS(MIND, "family: %zd", microbe.family);
+    LOG_GENESIS(MIND, "pos: %zd   %zd", microbe.pos.first, microbe.pos.second);
 
     auto& code = microbe.code;
     auto& regs = microbe.regs;
@@ -1021,6 +1042,7 @@ namespace genesis_n {
         rip = offset;
         break;
 
+#if 0
       } case 3: {
         uint8_t reg = SAFE_INDEX(code, rip++);
         uint8_t val = SAFE_INDEX(code, rip++);
@@ -1069,6 +1091,7 @@ namespace genesis_n {
         // MULT
         // DIV
         // IF
+#endif
 
       } case 16: {
         uint8_t reg = SAFE_INDEX(code, rip++);
@@ -1244,6 +1267,50 @@ namespace genesis_n {
     }
 
     return true;
+  }
+
+  void world_t::update_stats() {
+    TRACE_GENESIS;
+
+    stats.microbes_count = {};
+    stats.microbes_age_avg = {};
+
+    stats.resources_area_sum.resize(config.resources.size());
+    stats.resources_area_avg.resize(config.resources.size());
+    stats.resources_microbe_sum.resize(config.resources.size());
+    stats.resources_microbe_avg.resize(config.resources.size());
+
+    for (size_t i{}; i < config.resources.size(); ++i) {
+      stats.resources_area_sum[i] = {};
+      stats.resources_microbe_sum[i] = {};
+    }
+
+    for (const auto& cell : cells) {
+      const auto& microbe = cell.microbe;
+
+      for (size_t i{}; i < config.resources.size(); ++i) {
+        stats.resources_area_sum[i] += cell.resources[i];
+      }
+
+      if (!microbe.alive) {
+        continue;
+      }
+
+      for (size_t i{}; i < config.resources.size(); ++i) {
+        stats.resources_microbe_sum[i] += microbe.resources[i];
+      }
+
+      stats.microbes_count++;
+      stats.microbes_age_avg += microbe.age;
+    }
+
+    for (size_t i{}; i < config.resources.size(); ++i) {
+      stats.resources_area_avg[i] = stats.resources_area_sum[i] / std::max(1UL, cells.size());
+      stats.resources_microbe_avg[i] = stats.resources_microbe_sum[i] / std::max(1UL, stats.microbes_count);
+    }
+
+    stats.age++;
+    stats.microbes_age_avg /= std::max(1UL, stats.microbes_count);
   }
 
   void world_t::init() {
